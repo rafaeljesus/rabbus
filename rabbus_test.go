@@ -9,6 +9,12 @@ import (
 
 var RABBUS_DSN = os.Getenv("RABBUS_DSN")
 
+func init() {
+	if RABBUS_DSN == "" {
+		RABBUS_DSN = "amqp://localhost:5672"
+	}
+}
+
 func TestRabbusListen(t *testing.T) {
 	r, err := NewRabbus(Config{
 		Dsn:      RABBUS_DSN,
