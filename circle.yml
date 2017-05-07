@@ -1,0 +1,21 @@
+machine:
+  environment:
+    IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/rafaeljesus"
+    APP_PATH: "$IMPORT_PATH/rabbus"
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - sudo add-apt-repository ppa:masterminds/glide -y
+    - sudo apt-get update
+    - sudo apt-get install glide -y
+    - go get -x -u github.com/golang/lint/golint
+    - mkdir -p "$IMPORT_PATH"
+  override:
+    - ln -sf "$(pwd)" "$APP_PATH"
+    - cd "$APP_PATH" && glide install
+
+test:
+  override:
+    - cd "$APP_PATH" && make test

@@ -1,0 +1,7 @@
+package: github.com/rafaeljesus/rabbus
+import:
+- package: github.com/Sirupsen/logrus
+  version: v0.11.5
+- package: github.com/rubyist/circuitbreaker
+  version: v2.2.0
+- package: github.com/streadway/amqp
