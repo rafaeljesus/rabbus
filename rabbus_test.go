@@ -31,7 +31,7 @@ func TestRabbusListen(t *testing.T) {
 		QueueName:    "test_q",
 		HandlerFunc:  handler,
 	}); err != nil {
-		t.Fail()
+		t.Errorf("Expected to listen message %s", err)
 	}
 
 	r.Emit() <- &Message{
