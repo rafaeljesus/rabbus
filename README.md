@@ -15,7 +15,9 @@ The rabbus package exposes a interface for emitting and listening RabbitMQ messa
 
 ### Emit
 ```go
-import "github.com/rafaeljesus/rabbus"
+import (
+  "github.com/rafaeljesus/rabbus"
+)
 
 r, err := rabbus.NewRabbus(rabbus.Config{
   Dsn      : "amqp://guest:guest@localhost:5672",
