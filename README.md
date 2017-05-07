@@ -23,23 +23,21 @@ r, err := rabbus.NewRabbus(rabbus.Config{
   Timeout:  time.Second * 2,
 })
 
-go func() {
-  for {
-    select {
-      case r.Emit() <- &Message{
-        ExchangeName: "test_ex",
-        ExchangeType: "topic",
-        RoutingKey:   "test_key",
-        Payload:      []byte(`foo`),
-        DeliveryMode: Transient,
-      }
-      case r.EmitOk():
-       // message was sent
-      case r.EmitErr():
-       // failed to send message
+for {
+  select {
+    case r.Emit() <- &Message{
+      ExchangeName: "test_ex",
+      ExchangeType: "topic",
+      RoutingKey:   "test_key",
+      Payload:      []byte(`foo`),
+      DeliveryMode: Transient,
     }
+    case r.EmitOk():
+     // message was sent
+    case r.EmitErr():
+     // failed to send message
   }
-}()
+}
 ```
 
 ### Listen
@@ -68,7 +66,7 @@ if err := r.Listen(ListenConfig{
 
 func handler(d *Delivery) {
   e := &event{}
-	if err := json.NewDecoder(d.Body).Decode(e); err != nil {
+  if err := json.NewDecoder(d.Body).Decode(e); err != nil {
     d.Ack(false)
     return
   }
