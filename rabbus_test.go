@@ -1,20 +1,23 @@
 package rabbus
 
 import (
+	"os"
 	"sync"
 	"testing"
 	"time"
 )
 
+var RABBUS_DSN = os.Getenv("RABBUS_DSN")
+
 func TestRabbusListen(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      "amqp://guest:guest@localhost:5672",
+		Dsn:      RABBUS_DSN,
 		Attempts: 1,
 		Timeout:  time.Second * 2,
 		Durable:  true,
 	})
 	if err != nil {
-		t.Fail()
+		t.Errorf("Expected to init rabbus %s", err)
 	}
 
 	var wg sync.WaitGroup
@@ -38,7 +41,7 @@ func TestRabbusListen(t *testing.T) {
 		ExchangeType: "topic",
 		RoutingKey:   "test_key",
 		Payload:      []byte(`foo`),
-		DeliveryMode: Transient,
+		DeliveryMode: Persistent,
 	}
 
 	go func() {
@@ -57,12 +60,12 @@ func TestRabbusListen(t *testing.T) {
 
 func TestRabbusListen_Validate(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      "amqp://guest:guest@localhost:5672",
+		Dsn:      RABBUS_DSN,
 		Attempts: 1,
 		Timeout:  time.Second * 2,
 	})
 	if err != nil {
-		t.Fail()
+		t.Errorf("Expected to init rabbus %s", err)
 	}
 
 	if err := r.Listen(ListenConfig{}); err == nil {
@@ -91,12 +94,12 @@ func TestRabbusListen_Validate(t *testing.T) {
 
 func TestRabbusClose(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      "amqp://guest:guest@localhost:5672",
+		Dsn:      RABBUS_DSN,
 		Attempts: 1,
 		Timeout:  time.Second * 2,
 	})
 	if err != nil {
-		t.Fail()
+		t.Errorf("Expected to init rabbus %s", err)
 	}
 
 	r.Close()
@@ -104,12 +107,12 @@ func TestRabbusClose(t *testing.T) {
 
 func TestRabbus_reconnect(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      "amqp://guest:guest@localhost:5672",
+		Dsn:      RABBUS_DSN,
 		Attempts: 1,
 		Timeout:  time.Second * 2,
 	})
 	if err != nil {
-		t.Fail()
+		t.Errorf("Expected to init rabbus %s", err)
 	}
 
 	r.Close()
