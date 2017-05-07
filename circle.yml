@@ -3,7 +3,7 @@ machine:
     IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/rafaeljesus"
     APP_PATH: "$IMPORT_PATH/rabbus"
   services:
-    - docker
+    - rabbitmq
 
 dependencies:
   pre:
