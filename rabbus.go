@@ -262,7 +262,7 @@ func (r *rabbus) reconnect() {
 			return
 		}
 
-		ch, err := r.conn.Channel()
+		ch, err := conn.Channel()
 		if err != nil {
 			l.WithError(err).Error("Failed to open a new channel, will try later")
 			return

@@ -113,5 +113,25 @@ func TestRabbus_reconnect(t *testing.T) {
 		t.Fail()
 	}
 
+	r.Close()
 	r.reconnect()
+
+	r.Emit() <- &Message{
+		ExchangeName: "foo",
+		ExchangeType: "direct",
+		RoutingKey:   "foo",
+		Payload:      []byte(`foo`),
+		DeliveryMode: Transient,
+	}
+
+loop:
+	for {
+		select {
+		case <-r.EmitOk():
+			break loop
+		case <-r.EmitErr():
+			t.Errorf("Expected to emit message")
+			break loop
+		}
+	}
 }
