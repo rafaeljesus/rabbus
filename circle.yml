@@ -2,8 +2,9 @@ machine:
   environment:
     IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/rafaeljesus"
     APP_PATH: "$IMPORT_PATH/rabbus"
+    RABBUS_DSN: "amqp://localhost:5672"
   services:
-    - rabbitmq
+    - rabbitmq-server
 
 dependencies:
   pre:
