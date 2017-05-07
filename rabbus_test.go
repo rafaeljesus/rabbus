@@ -11,6 +11,7 @@ func TestRabbusListen(t *testing.T) {
 		Dsn:      "amqp://guest:guest@localhost:5672",
 		Attempts: 1,
 		Timeout:  time.Second * 2,
+		Durable:  true,
 	})
 	if err != nil {
 		t.Fail()
@@ -19,17 +20,15 @@ func TestRabbusListen(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	handler := func(d *Delivery) {
-		d.Ack(true)
-		wg.Done()
-	}
-
 	if err := r.Listen(ListenConfig{
 		ExchangeName: "test_ex",
 		ExchangeType: "topic",
 		RoutingKey:   "test_key",
 		QueueName:    "test_q",
-		HandlerFunc:  handler,
+		HandlerFunc: func(d *Delivery) {
+			d.Ack(true)
+			wg.Done()
+		},
 	}); err != nil {
 		t.Errorf("Expected to listen message %s", err)
 	}

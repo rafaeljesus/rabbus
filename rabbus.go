@@ -34,6 +34,7 @@ type Config struct {
 	Dsn      string
 	Attempts int64
 	Timeout  time.Duration
+	Durable  bool
 }
 
 // Message carries fields for sending messages.
@@ -53,7 +54,6 @@ type ListenConfig struct {
 	ExchangeType string
 	RoutingKey   string
 	QueueName    string
-	Durable      bool
 	HandlerFunc  handlerFunc
 }
 
@@ -148,12 +148,12 @@ func (r *rabbus) Listen(c ListenConfig) (err error) {
 		"queue":         c.QueueName,
 	})
 
-	if err = r.ch.ExchangeDeclare(c.ExchangeName, c.ExchangeType, false, false, false, false, nil); err != nil {
+	if err = r.ch.ExchangeDeclare(c.ExchangeName, c.ExchangeType, r.config.Durable, false, false, false, nil); err != nil {
 		return
 	}
 
 	l.Debug("Declaring queue")
-	q, err := r.ch.QueueDeclare(c.QueueName, c.Durable, false, false, false, nil)
+	q, err := r.ch.QueueDeclare(c.QueueName, r.config.Durable, false, false, false, nil)
 	if err != nil {
 		return
 	}
@@ -208,7 +208,7 @@ func (r *rabbus) emit(m *Message) {
 	l.Debug("Sending message")
 
 	err := cb.Call(func() (err error) {
-		if err = r.ch.ExchangeDeclare(m.ExchangeName, m.ExchangeType, false, false, false, false, nil); err != nil {
+		if err = r.ch.ExchangeDeclare(m.ExchangeName, m.ExchangeType, r.config.Durable, false, false, false, nil); err != nil {
 			return
 		}
 
