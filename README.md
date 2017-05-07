@@ -18,9 +18,10 @@ The rabbus package exposes a interface for emitting and listening RabbitMQ messa
 import "github.com/rafaeljesus/rabbus"
 
 r, err := rabbus.NewRabbus(rabbus.Config{
-  Dsn:      "amqp://guest:guest@localhost:5672",
-  Attempts: 5,
-  Timeout:  time.Second * 2,
+  Dsn      : "amqp://guest:guest@localhost:5672",
+  Attempts : 5,
+  Timeout  : time.Second * 2,
+  Durable  : true,
 })
 
 for {
@@ -30,7 +31,7 @@ for {
       ExchangeType: "topic",
       RoutingKey:   "test_key",
       Payload:      []byte(`foo`),
-      DeliveryMode: Transient,
+      DeliveryMode: Persistent,
     }
     case r.EmitOk():
      // message was sent
@@ -49,9 +50,10 @@ import (
 )
 
 r, err := rabbus.NewRabbus(rabbus.Config{
-  Dsn:      "amqp://guest:guest@localhost:5672",
-  Attempts: 5,
-  Timeout:  time.Second * 2,
+  Dsn       : "amqp://guest:guest@localhost:5672",
+  Attempts  : 5,
+  Timeout   : time.Second * 2,
+  Durable   : true,
 })
 
 if err := r.Listen(ListenConfig{
