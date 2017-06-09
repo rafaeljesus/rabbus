@@ -23,11 +23,11 @@ func TestRabbusListen(t *testing.T) {
 	wg.Add(1)
 
 	if err := r.Listen(ListenConfig{
-		ExchangeName: "test_ex",
-		ExchangeType: "topic",
-		RoutingKey:   "test_key",
-		QueueName:    "test_q",
-		HandlerFunc: func(d *Delivery) {
+		Exchange: "test_ex",
+		Kind:     "direct",
+		Key:      "test_key",
+		Queue:    "test_q",
+		Handler: func(d *Delivery) {
 			d.Ack(true)
 			wg.Done()
 		},
@@ -36,9 +36,9 @@ func TestRabbusListen(t *testing.T) {
 	}
 
 	r.Emit() <- &Message{
-		ExchangeName: "test_ex",
-		ExchangeType: "topic",
-		RoutingKey:   "test_key",
+		Exchange:     "test_ex",
+		Kind:         "direct",
+		Key:          "test_key",
 		Payload:      []byte(`foo`),
 		DeliveryMode: Persistent,
 	}
@@ -68,26 +68,26 @@ func TestRabbusListen_Validate(t *testing.T) {
 	}
 
 	if err := r.Listen(ListenConfig{}); err == nil {
-		t.Errorf("Expected to validate ExchangeName")
+		t.Errorf("Expected to validate Exchange")
 	}
 
-	if err = r.Listen(ListenConfig{ExchangeName: "foo"}); err == nil {
-		t.Errorf("Expected to validate ExchangeType")
-	}
-
-	if err = r.Listen(ListenConfig{
-		ExchangeName: "foo",
-		ExchangeType: "foo",
-	}); err == nil {
-		t.Errorf("Expected to validate QueueName")
+	if err = r.Listen(ListenConfig{Exchange: "foo"}); err == nil {
+		t.Errorf("Expected to validate Kind")
 	}
 
 	if err = r.Listen(ListenConfig{
-		ExchangeName: "foo",
-		ExchangeType: "foo",
-		QueueName:    "foo",
+		Exchange: "foo2",
+		Kind:     "direct",
 	}); err == nil {
-		t.Errorf("Expected to validate HandlerFunc")
+		t.Errorf("Expected to validate Queue")
+	}
+
+	if err = r.Listen(ListenConfig{
+		Exchange: "foo2",
+		Kind:     "direct",
+		Queue:    "foo2",
+	}); err == nil {
+		t.Errorf("Expected to validate Handler")
 	}
 }
 
@@ -118,9 +118,9 @@ func TestRabbus_reconnect(t *testing.T) {
 	r.reconnect()
 
 	r.Emit() <- &Message{
-		ExchangeName: "foo",
-		ExchangeType: "direct",
-		RoutingKey:   "foo",
+		Exchange:     "foo2",
+		Kind:         "direct",
+		Key:          "foo2",
 		Payload:      []byte(`foo`),
 		DeliveryMode: Transient,
 	}

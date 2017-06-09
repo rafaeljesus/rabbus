@@ -2,10 +2,10 @@ package rabbus
 
 import (
 	"encoding/json"
+	"log"
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/rubyist/circuitbreaker"
 	"github.com/streadway/amqp"
 )
@@ -39,9 +39,9 @@ type Config struct {
 
 // Message carries fields for sending messages.
 type Message struct {
-	ExchangeName string
-	ExchangeType string
-	RoutingKey   string
+	Exchange     string
+	Kind         string
+	Key          string
 	Payload      interface{}
 	DeliveryMode uint8
 }
@@ -50,11 +50,11 @@ type handlerFunc func(d *Delivery)
 
 // ListenConfig carries fields for listening messages.
 type ListenConfig struct {
-	ExchangeName string
-	ExchangeType string
-	RoutingKey   string
-	QueueName    string
-	HandlerFunc  handlerFunc
+	Exchange string
+	Kind     string
+	Key      string
+	Queue    string
+	Handler  handlerFunc
 }
 
 // Delivery wraps amqp.Delivery struct
@@ -64,12 +64,13 @@ type Delivery struct {
 
 type rabbus struct {
 	sync.RWMutex
-	conn       *amqp.Connection
-	ch         *amqp.Channel
-	emitter    chan *Message
-	emitterErr chan error
-	emitterOk  chan bool
-	config     Config
+	conn           *amqp.Connection
+	ch             *amqp.Channel
+	circuitbreaker *circuit.Breaker
+	emitter        chan *Message
+	emitterErr     chan error
+	emitterOk      chan bool
+	config         Config
 }
 
 // NewRabbus returns a new Rabbus configured with the
@@ -86,13 +87,15 @@ func NewRabbus(c Config) (r Rabbus, err error) {
 		return
 	}
 
+	cb := circuit.NewThresholdBreaker(c.Attempts)
 	ra := &rabbus{
-		conn:       conn,
-		ch:         ch,
-		emitter:    make(chan *Message),
-		emitterErr: make(chan error),
-		emitterOk:  make(chan bool),
-		config:     c,
+		conn:           conn,
+		ch:             ch,
+		circuitbreaker: cb,
+		emitter:        make(chan *Message),
+		emitterErr:     make(chan error),
+		emitterOk:      make(chan bool),
+		config:         c,
 	}
 
 	go ra.register()
@@ -122,64 +125,53 @@ func (r *rabbus) EmitOk() <-chan bool {
 // an error if exchange, queue name and function handler not passed or if an error occurred while creating
 // amqp consumer.
 func (r *rabbus) Listen(c ListenConfig) (err error) {
-	if c.ExchangeName == "" {
-		err = ErrMissingExchangeName
+	if c.Exchange == "" {
+		err = ErrMissingExchange
 		return
 	}
 
-	if c.ExchangeType == "" {
-		err = ErrMissingExchangeType
+	if c.Kind == "" {
+		err = ErrMissingKind
 		return
 	}
 
-	if c.QueueName == "" {
-		err = ErrMissingQueueName
+	if c.Queue == "" {
+		err = ErrMissingQueue
 		return
 	}
 
-	if c.HandlerFunc == nil {
-		err = ErrMissingHandlerFunc
+	if c.Handler == nil {
+		err = ErrMissingHandler
 		return
 	}
 
-	l := log.WithFields(log.Fields{
-		"exchange_name": c.ExchangeName,
-		"routing_key":   c.RoutingKey,
-		"queue":         c.QueueName,
-	})
-
-	if err = r.ch.ExchangeDeclare(c.ExchangeName, c.ExchangeType, r.config.Durable, false, false, false, nil); err != nil {
+	if err = r.ch.ExchangeDeclare(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
 		return
 	}
 
-	l.Debug("Declaring queue")
-	q, err := r.ch.QueueDeclare(c.QueueName, r.config.Durable, false, false, false, nil)
+	q, err := r.ch.QueueDeclare(c.Queue, r.config.Durable, false, false, false, nil)
 	if err != nil {
 		return
 	}
 
-	l.Debug("Binding queue")
-	if err = r.ch.QueueBind(q.Name, c.RoutingKey, c.ExchangeName, false, nil); err != nil {
+	if err = r.ch.QueueBind(q.Name, c.Key, c.Exchange, false, nil); err != nil {
 		return
 	}
 
-	l.Debug("Adding consumer")
 	messages, err := r.ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return
 	}
 
-	go func(l *log.Entry) {
+	go func() {
 		for {
 			select {
 			case m := <-messages:
-				l.Debug("Receiving message")
-
 				d := &Delivery{Delivery: m}
-				c.HandlerFunc(d)
+				c.Handler(d)
 			}
 		}
-	}(l)
+	}()
 
 	return
 }
@@ -191,30 +183,20 @@ func (r *rabbus) Close() {
 }
 
 func (r *rabbus) register() {
-	go func() {
-		for {
-			select {
-			case m := <-r.emitter:
-				r.emit(m)
-			}
-		}
-	}()
+	for m := range r.emitter {
+		r.emit(m)
+	}
 }
 
 func (r *rabbus) emit(m *Message) {
-	cb := circuit.NewThresholdBreaker(r.config.Attempts)
-	l := log.WithField("routing_key", m.RoutingKey)
-
-	l.Debug("Sending message")
-
-	err := cb.Call(func() (err error) {
-		if err = r.ch.ExchangeDeclare(m.ExchangeName, m.ExchangeType, r.config.Durable, false, false, false, nil); err != nil {
-			return
+	err := r.circuitbreaker.Call(func() error {
+		if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
+			return err
 		}
 
 		body, err := json.Marshal(m.Payload)
 		if err != nil {
-			return
+			return err
 		}
 
 		message := amqp.Publishing{
@@ -225,28 +207,21 @@ func (r *rabbus) emit(m *Message) {
 			Body:            body,
 		}
 
-		err = r.ch.Publish(m.ExchangeName, m.RoutingKey, false, false, message)
-
-		return
-
+		return r.ch.Publish(m.Exchange, m.Key, false, false, message)
 	}, r.config.Timeout)
 
 	if err != nil {
-		l.WithError(err).Error("Failed to send message")
+		log.Print(err)
 		r.emitterErr <- err
 		return
 	}
 
 	r.emitterOk <- true
-
-	l.Debug("Message successfully sent")
 }
 
 func (r *rabbus) notifyClose() {
 	shutdownError := <-r.conn.NotifyClose(make(chan *amqp.Error))
-
 	if shutdownError != nil {
-		log.WithField("timeout", r.config.Timeout).Info("Caught RabbitMQ close notification with error, trying to reconnect")
 		r.reconnect()
 	}
 }
@@ -254,23 +229,18 @@ func (r *rabbus) notifyClose() {
 func (r *rabbus) reconnect() {
 	for {
 		time.Sleep(r.config.Timeout)
-		l := log.WithField("timeout", r.config.Timeout)
-
 		conn, err := amqp.Dial(r.config.Dsn)
 		if err != nil {
-			l.WithError(err).Error("Failed to open new connection, will try later")
-			return
+			continue
 		}
 
 		ch, err := conn.Channel()
 		if err != nil {
-			l.WithError(err).Error("Failed to open a new channel, will try later")
-			return
+			continue
 		}
 
 		r.Lock()
 		defer r.Unlock()
-
 		r.conn = conn
 		r.ch = ch
 
