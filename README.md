@@ -29,9 +29,9 @@ r, err := rabbus.NewRabbus(rabbus.Config{
 for {
   select {
     case r.Emit() <- &Message{
-      ExchangeName: "test_ex",
-      ExchangeType: "topic",
-      RoutingKey:   "test_key",
+      Exchange: "test_ex",
+      Kind: "topic",
+      Key:   "test_key",
       Payload:      []byte(`foo`),
       DeliveryMode: Persistent,
     }
@@ -59,11 +59,11 @@ r, err := rabbus.NewRabbus(rabbus.Config{
 })
 
 if err := r.Listen(ListenConfig{
-  ExchangeName: "events_ex",
-  ExchangeType: "topic",
-  RoutingKey:   "events_key",
-  QueueName:    "events_q",
-  HandlerFunc:  handler,
+  Exchange: "events_ex",
+  Kind: "topic",
+  Key:   "events_key",
+  Queue:    "events_q",
+  Handler:  handler,
 }); err != nil {
   // handle errors during adding listener
 }
