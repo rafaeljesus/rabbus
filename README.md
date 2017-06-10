@@ -1,8 +1,9 @@
 ## Rabbus
 
-* A tiny wrapper around [amqp](github.com/streadway/amqp) exchanges and queues.
-* Auto reconnect to RabbitMQ broker.
-* Relies on circuit breaker and retry for sending messages.
+* A tiny wrapper over [amqp](github.com/streadway/amqp) exchanges and queues.
+* Automatic retries and exponential backoff for sending messages.
+* Make use of [circuit breaker](github.com/rubyist/circuitbreaker).
+* Automatic reconnect to RabbitMQ broker.
 * Golang channel API.
 
 ## Installation
@@ -25,6 +26,7 @@ func main() {
     Threshold: 10,
     Timeout  : time.Second * 2,
     Attempts : 5,
+    Sleep     : time.Second * 2,
     Durable  : true,
   })
 
