@@ -30,10 +30,10 @@ func main() {
 
   select {
     case r.EmitAsync() <- Message{
-      Exchange: "test_ex",
-      Kind: "topic",
-      Key:   "test_key",
-      Payload:      []byte(`foo`),
+      Exchange  : "test_ex",
+      Kind      : "topic",
+      Key       : "test_key",
+      Payload   : []byte(`foo`),
     }
     case r.EmitOk():
      // message was sent
