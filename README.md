@@ -29,7 +29,7 @@ func main() {
   })
 
   select {
-    case r.EmitAsync() <- &Message{
+    case r.EmitAsync() <- Message{
       Exchange: "test_ex",
       Kind: "topic",
       Key:   "test_key",
