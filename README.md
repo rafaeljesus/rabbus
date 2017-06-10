@@ -1,4 +1,4 @@
-## Rabbus
+## Rabbus 🚌 ✨
 
 * A tiny wrapper over [amqp](github.com/streadway/amqp) exchanges and queues.
 * Automatic retries and exponential backoff for sending messages.
