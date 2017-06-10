@@ -29,17 +29,6 @@ TARGETS=$@
 echo "${OK_COLOR}Running tests: ${NO_COLOR}"
 go test -v -race -cover  ${TARGETS}
 
-echo "${OK_COLOR}Formatting: ${NO_COLOR}"
-ERRS=$(find . -type f -name \*.go | xargs gofmt -l 2>&1 || true)
-if [ -n "${ERRS}" ]; then
-    echo "${ERROR_COLOR}FAIL - the following files need to be gofmt'ed: ${NO_COLOR}"
-    for e in ${ERRS}; do
-        echo "    $e"
-    done
-    exit 1
-fi
-echo ${PASS}
-
 echo "${OK_COLOR}Vetting: ${NO_COLOR}"
 ERRS=$(go vet ${TARGETS} 2>&1 || true)
 if [ -n "${ERRS}" ]; then
