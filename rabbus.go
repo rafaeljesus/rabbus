@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rafaeljesus/rabbus/circuitbreaker"
 	"github.com/streadway/amqp"
 )
 
@@ -60,7 +61,7 @@ type rabbus struct {
 	sync.RWMutex
 	conn           *amqp.Connection
 	ch             *amqp.Channel
-	circuitbreaker *breaker
+	circuitbreaker circuit.Breaker
 	emit           chan Message
 	emitErr        chan error
 	emitOk         chan bool
@@ -84,7 +85,7 @@ func NewRabbus(c Config) (Rabbus, error) {
 	r := &rabbus{
 		conn:           conn,
 		ch:             ch,
-		circuitbreaker: newThresholdBreaker(c.Threshold, c.Attempts, c.Sleep),
+		circuitbreaker: circuit.NewThresholdBreaker(c.Threshold, c.Attempts, c.Sleep),
 		emit:           make(chan Message),
 		emitErr:        make(chan error),
 		emitOk:         make(chan bool),
@@ -189,7 +190,7 @@ func (r *rabbus) register() {
 }
 
 func (r *rabbus) produce(m Message) {
-	err := r.circuitbreaker.call(func() error {
+	err := r.circuitbreaker.Call(func() error {
 		if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
 			return err
 		}
