@@ -2,7 +2,7 @@
 
 * A tiny wrapper around [amqp](github.com/streadway/amqp) exchanges and queues.
 * Auto reconnect to RabbitMQ broker.
-* Relies on circuit breaker pattern for sending messages.
+* Relies on circuit breaker and retry for sending messages.
 * Golang channel API.
 
 ## Installation
@@ -22,13 +22,14 @@ import (
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
     Dsn      : "amqp://guest:guest@localhost:5672",
-    Attempts : 5,
+    Threshold: 10,
     Timeout  : time.Second * 2,
+    Attempts : 5,
     Durable  : true,
   })
 
   select {
-    case r.Emit() <- &Message{
+    case r.EmitAsync() <- &Message{
       Exchange: "test_ex",
       Kind: "topic",
       Key:   "test_key",
@@ -53,36 +54,28 @@ import (
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
     Dsn       : "amqp://guest:guest@localhost:5672",
-    Attempts  : 5,
+    Threshold : 10,
     Timeout   : time.Second * 2,
+    Attempts  : 3,
+    Sleep     : time.Second * 2,
     Durable   : true,
   })
 
-  if err := r.Listen(rabbus.ListenConfig{
+  messages, err := r.Listen(rabbus.ListenConfig{
     Exchange: "events_ex",
     Kind:     "topic",
     Key:      "events_key",
     Queue:    "events_q",
-    Handler:  handler,
-  }); err != nil {
+  })
+  if err != nil {
     // handle errors during adding listener
   }
-}
 
-func handler(d *Delivery) {
-  e := &event{}
-  if err := json.NewDecoder(d.Body).Decode(e); err != nil {
-    d.Ack(false)
-    return
-  }
-
-  _, err = doWork(e)
-  if err != nil {
-    d.Ack(false)
-    return
-  }
-
-  d.Ack(true)
+	go func() {
+		for m := range messages {
+      m.Ack(false)
+		}
+	}()
 }
 ```
 
