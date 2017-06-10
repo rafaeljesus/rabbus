@@ -70,12 +70,12 @@ func main() {
   if err != nil {
     // handle errors during adding listener
   }
-
-	go func() {
-		for m := range messages {
+  
+  go func() {
+    for m := range messages {
       m.Ack(false)
-		}
-	}()
+    }
+  }()
 }
 ```
 
