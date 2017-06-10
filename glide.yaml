@@ -3,3 +3,4 @@ import:
 - package: github.com/rubyist/circuitbreaker
   version: v2.2.0
 - package: github.com/streadway/amqp
+- package: github.com/rafaeljesus/retry-go

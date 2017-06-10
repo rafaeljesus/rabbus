@@ -2,11 +2,9 @@ package rabbus
 
 import (
 	"encoding/json"
-	"log"
 	"sync"
 	"time"
 
-	"github.com/rubyist/circuitbreaker"
 	"github.com/streadway/amqp"
 )
 
@@ -19,22 +17,21 @@ const (
 
 // Rabbus exposes a interface for emitting and listening for messages.
 type Rabbus interface {
-	Emit() chan<- *Message
+	EmitAsync() chan<- Message
 	EmitErr() <-chan error
 	EmitOk() <-chan bool
-	Listen(ListenConfig) error
+	Listen(ListenConfig) (chan ConsumerMessage, error)
 	Close()
-
-	notifyClose()
-	reconnect()
 }
 
 // Config carries the variables to tune a newly started rabbus.
 type Config struct {
-	Dsn      string
-	Attempts int64
-	Timeout  time.Duration
-	Durable  bool
+	Dsn       string
+	Attempts  int
+	Threshold int64
+	Timeout   time.Duration
+	Sleep     time.Duration
+	Durable   bool
 }
 
 // Message carries fields for sending messages.
@@ -46,15 +43,12 @@ type Message struct {
 	DeliveryMode uint8
 }
 
-type handlerFunc func(d *Delivery)
-
 // ListenConfig carries fields for listening messages.
 type ListenConfig struct {
 	Exchange string
 	Kind     string
 	Key      string
 	Queue    string
-	Handler  handlerFunc
 }
 
 // Delivery wraps amqp.Delivery struct
@@ -66,114 +60,120 @@ type rabbus struct {
 	sync.RWMutex
 	conn           *amqp.Connection
 	ch             *amqp.Channel
-	circuitbreaker *circuit.Breaker
-	emitter        chan *Message
-	emitterErr     chan error
-	emitterOk      chan bool
+	circuitbreaker *breaker
+	emit           chan Message
+	emitErr        chan error
+	emitOk         chan bool
 	config         Config
 }
 
 // NewRabbus returns a new Rabbus configured with the
 // variables from the config parameter, or returning an non-nil err
 // if an error occurred while creating connection and channel.
-func NewRabbus(c Config) (r Rabbus, err error) {
+func NewRabbus(c Config) (Rabbus, error) {
 	conn, err := amqp.Dial(c.Dsn)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	ch, err := conn.Channel()
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	cb := circuit.NewThresholdBreaker(c.Attempts)
-	ra := &rabbus{
+	r := &rabbus{
 		conn:           conn,
 		ch:             ch,
-		circuitbreaker: cb,
-		emitter:        make(chan *Message),
-		emitterErr:     make(chan error),
-		emitterOk:      make(chan bool),
+		circuitbreaker: newThresholdBreaker(c.Threshold, c.Attempts, c.Sleep),
+		emit:           make(chan Message),
+		emitErr:        make(chan error),
+		emitOk:         make(chan bool),
 		config:         c,
 	}
 
-	go ra.register()
-	go ra.notifyClose()
+	go r.register()
+	go notifyClose(c.Dsn, r)
 
-	r = ra
+	rab := r
 
-	return
+	return rab, nil
 }
 
-// Emit emits a message to RabbitMQ, but does not wait for the response from broker.
-func (r *rabbus) Emit() chan<- *Message {
-	return r.emitter
+// EmitAsync emits a message to RabbitMQ, but does not wait for the response from broker.
+func (r *rabbus) EmitAsync() chan<- Message {
+	return r.emit
 }
 
-// EmitErr returns an error if encoding payload fails, or if after circuit breaker retries attempts exceed
+// EmitErr returns an error if encoding payload fails, or if after circuit breaker is open or retries attempts exceed.
 func (r *rabbus) EmitErr() <-chan error {
-	return r.emitterErr
+	return r.emitErr
 }
 
 // EmitOk returns true when the message was sent.
 func (r *rabbus) EmitOk() <-chan bool {
-	return r.emitterOk
+	return r.emitOk
 }
 
 // Listen to a message from RabbitMQ, returns
 // an error if exchange, queue name and function handler not passed or if an error occurred while creating
 // amqp consumer.
-func (r *rabbus) Listen(c ListenConfig) (err error) {
+func (r *rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 	if c.Exchange == "" {
-		err = ErrMissingExchange
-		return
+		return nil, ErrMissingExchange
 	}
 
 	if c.Kind == "" {
-		err = ErrMissingKind
-		return
+		return nil, ErrMissingKind
 	}
 
 	if c.Queue == "" {
-		err = ErrMissingQueue
-		return
+		return nil, ErrMissingQueue
 	}
 
-	if c.Handler == nil {
-		err = ErrMissingHandler
-		return
-	}
-
-	if err = r.ch.ExchangeDeclare(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
-		return
+	if err := r.ch.ExchangeDeclare(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
+		return nil, err
 	}
 
 	q, err := r.ch.QueueDeclare(c.Queue, r.config.Durable, false, false, false, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	if err = r.ch.QueueBind(q.Name, c.Key, c.Exchange, false, nil); err != nil {
-		return
+	if err := r.ch.QueueBind(q.Name, c.Key, c.Exchange, false, nil); err != nil {
+		return nil, err
 	}
 
-	messages, err := r.ch.Consume(q.Name, "", false, false, false, false, nil)
+	msgs, err := r.ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	go func() {
-		for {
-			select {
-			case m := <-messages:
-				d := &Delivery{Delivery: m}
-				c.Handler(d)
+	messages := make(chan ConsumerMessage, 256)
+	go func(msgs <-chan amqp.Delivery, messages chan ConsumerMessage) {
+		for m := range msgs {
+			messages <- ConsumerMessage{
+				delivery:        m,
+				ContentType:     m.ContentType,
+				ContentEncoding: m.ContentEncoding,
+				DeliveryMode:    m.DeliveryMode,
+				Priority:        m.Priority,
+				CorrelationId:   m.CorrelationId,
+				ReplyTo:         m.ReplyTo,
+				Expiration:      m.Expiration,
+				Timestamp:       m.Timestamp,
+				Type:            m.Type,
+				ConsumerTag:     m.ConsumerTag,
+				MessageCount:    m.MessageCount,
+				DeliveryTag:     m.DeliveryTag,
+				Redelivered:     m.Redelivered,
+				Exchange:        m.Exchange,
+				Key:             m.RoutingKey,
+				Body:            m.Body,
 			}
 		}
-	}()
+	}(msgs, messages)
 
-	return
+	return messages, nil
 }
 
 // Close attempt to close channel and connection.
@@ -183,13 +183,13 @@ func (r *rabbus) Close() {
 }
 
 func (r *rabbus) register() {
-	for m := range r.emitter {
-		r.emit(m)
+	for m := range r.emit {
+		r.produce(m)
 	}
 }
 
-func (r *rabbus) emit(m *Message) {
-	err := r.circuitbreaker.Call(func() error {
+func (r *rabbus) produce(m Message) {
+	err := r.circuitbreaker.call(func() error {
 		if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
 			return err
 		}
@@ -199,53 +199,46 @@ func (r *rabbus) emit(m *Message) {
 			return err
 		}
 
-		message := amqp.Publishing{
+		return r.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
 			DeliveryMode:    m.DeliveryMode,
 			Timestamp:       time.Now(),
 			ContentEncoding: "UTF-8",
 			ContentType:     "application/json",
 			Body:            body,
-		}
-
-		return r.ch.Publish(m.Exchange, m.Key, false, false, message)
+		})
 	}, r.config.Timeout)
 
 	if err != nil {
-		log.Print(err)
-		r.emitterErr <- err
+		r.emitErr <- err
 		return
 	}
 
-	r.emitterOk <- true
+	r.emitOk <- true
 }
 
-func (r *rabbus) notifyClose() {
-	shutdownError := <-r.conn.NotifyClose(make(chan *amqp.Error))
-	if shutdownError != nil {
-		r.reconnect()
-	}
-}
+func notifyClose(dsn string, r *rabbus) {
+	err := <-r.conn.NotifyClose(make(chan *amqp.Error))
+	if err != nil {
+		for {
+			time.Sleep(time.Second * 2)
+			conn, err := amqp.Dial(dsn)
+			if err != nil {
+				continue
+			}
 
-func (r *rabbus) reconnect() {
-	for {
-		time.Sleep(r.config.Timeout)
-		conn, err := amqp.Dial(r.config.Dsn)
-		if err != nil {
-			continue
+			ch, err := conn.Channel()
+			if err != nil {
+				continue
+			}
+
+			r.Lock()
+			defer r.Unlock()
+			r.conn = conn
+			r.ch = ch
+
+			go notifyClose(dsn, r)
+
+			break
 		}
-
-		ch, err := conn.Channel()
-		if err != nil {
-			continue
-		}
-
-		r.Lock()
-		defer r.Unlock()
-		r.conn = conn
-		r.ch = ch
-
-		go r.notifyClose()
-
-		break
 	}
 }

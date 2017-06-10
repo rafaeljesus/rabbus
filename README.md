@@ -19,21 +19,20 @@ import (
   "github.com/rafaeljesus/rabbus"
 )
 
-r, err := rabbus.NewRabbus(rabbus.Config{
-  Dsn      : "amqp://guest:guest@localhost:5672",
-  Attempts : 5,
-  Timeout  : time.Second * 2,
-  Durable  : true,
-})
+func main() {
+  r, err := rabbus.NewRabbus(rabbus.Config{
+    Dsn      : "amqp://guest:guest@localhost:5672",
+    Attempts : 5,
+    Timeout  : time.Second * 2,
+    Durable  : true,
+  })
 
-for {
   select {
     case r.Emit() <- &Message{
       Exchange: "test_ex",
       Kind: "topic",
       Key:   "test_key",
       Payload:      []byte(`foo`),
-      DeliveryMode: Persistent,
     }
     case r.EmitOk():
      // message was sent
@@ -51,21 +50,23 @@ import (
   "github.com/rafaeljesus/rabbus"
 )
 
-r, err := rabbus.NewRabbus(rabbus.Config{
-  Dsn       : "amqp://guest:guest@localhost:5672",
-  Attempts  : 5,
-  Timeout   : time.Second * 2,
-  Durable   : true,
-})
+func main() {
+  r, err := rabbus.NewRabbus(rabbus.Config{
+    Dsn       : "amqp://guest:guest@localhost:5672",
+    Attempts  : 5,
+    Timeout   : time.Second * 2,
+    Durable   : true,
+  })
 
-if err := r.Listen(ListenConfig{
-  Exchange: "events_ex",
-  Kind: "topic",
-  Key:   "events_key",
-  Queue:    "events_q",
-  Handler:  handler,
-}); err != nil {
-  // handle errors during adding listener
+  if err := r.Listen(rabbus.ListenConfig{
+    Exchange: "events_ex",
+    Kind:     "topic",
+    Key:      "events_key",
+    Queue:    "events_q",
+    Handler:  handler,
+  }); err != nil {
+    // handle errors during adding listener
+  }
 }
 
 func handler(d *Delivery) {
@@ -82,7 +83,6 @@ func handler(d *Delivery) {
   }
 
   d.Ack(true)
-  return
 }
 ```
 

@@ -1,8 +1,18 @@
-hash: ed2f29b2f1601b2601499ba66f0bf79d11d915614403a9c9d3a3ae09abc488a2
-updated: 2017-06-09T18:22:04.707264225+02:00
+hash: 8a03f1fe66d7127da1b799b697d429a52a367de0f0fca4b1dc15346573113730
+updated: 2017-06-10T00:33:58.165465544+02:00
 imports:
+- name: github.com/cenk/backoff
+  version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
+- name: github.com/facebookgo/clock
+  version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
+- name: github.com/rafaeljesus/retry-go
+  version: 3bbade4f4fab0cf8e41928da5869760c17a037db
 - name: github.com/rubyist/circuitbreaker
   version: 7e3e7fbe9c62b943d487af023566a79d9eb22d3b
 - name: github.com/streadway/amqp
-  version: dfe15e36048539f4cda41f240b27a5ca25b9cd46
+  version: 23eb59d9850310665357758b78f8993692e8dabb
+- name: golang.org/x/net
+  version: e78b1e49ae6a141efbf00e840cf59c503308593b
+  subpackages:
+  - context
 testImports: []
