@@ -27,6 +27,28 @@ type ConsumerMessage struct {
 	Body            []byte
 }
 
+func newConsumerMessage(m amqp.Delivery) ConsumerMessage {
+	return ConsumerMessage{
+		delivery:        m,
+		ContentType:     m.ContentType,
+		ContentEncoding: m.ContentEncoding,
+		DeliveryMode:    m.DeliveryMode,
+		Priority:        m.Priority,
+		CorrelationId:   m.CorrelationId,
+		ReplyTo:         m.ReplyTo,
+		Expiration:      m.Expiration,
+		Timestamp:       m.Timestamp,
+		Type:            m.Type,
+		ConsumerTag:     m.ConsumerTag,
+		MessageCount:    m.MessageCount,
+		DeliveryTag:     m.DeliveryTag,
+		Redelivered:     m.Redelivered,
+		Exchange:        m.Exchange,
+		Key:             m.RoutingKey,
+		Body:            m.Body,
+	}
+}
+
 func (cm *ConsumerMessage) Ack(multiple bool) error {
 	return cm.delivery.Ack(multiple)
 }

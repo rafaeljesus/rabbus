@@ -152,25 +152,7 @@ func (r *rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 	messages := make(chan ConsumerMessage, 256)
 	go func(msgs <-chan amqp.Delivery, messages chan ConsumerMessage) {
 		for m := range msgs {
-			messages <- ConsumerMessage{
-				delivery:        m,
-				ContentType:     m.ContentType,
-				ContentEncoding: m.ContentEncoding,
-				DeliveryMode:    m.DeliveryMode,
-				Priority:        m.Priority,
-				CorrelationId:   m.CorrelationId,
-				ReplyTo:         m.ReplyTo,
-				Expiration:      m.Expiration,
-				Timestamp:       m.Timestamp,
-				Type:            m.Type,
-				ConsumerTag:     m.ConsumerTag,
-				MessageCount:    m.MessageCount,
-				DeliveryTag:     m.DeliveryTag,
-				Redelivered:     m.Redelivered,
-				Exchange:        m.Exchange,
-				Key:             m.RoutingKey,
-				Body:            m.Body,
-			}
+			messages <- newConsumerMessage(m)
 		}
 	}(msgs, messages)
 
@@ -191,20 +173,20 @@ func (r *rabbus) register() {
 
 func (r *rabbus) produce(m Message) {
 	err := r.circuitbreaker.Call(func() error {
-		if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
-			return err
-		}
-
 		body, err := json.Marshal(m.Payload)
 		if err != nil {
 			return err
 		}
 
+		if m.DeliveryMode == 0 {
+			m.DeliveryMode = Persistent
+		}
+
 		return r.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
+			ContentType:     "application/json",
+			ContentEncoding: "UTF-8",
 			DeliveryMode:    m.DeliveryMode,
 			Timestamp:       time.Now(),
-			ContentEncoding: "UTF-8",
-			ContentType:     "application/json",
 			Body:            body,
 		})
 	}, r.config.Timeout)
