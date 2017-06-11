@@ -18,10 +18,17 @@ const (
 
 // Rabbus exposes a interface for emitting and listening for messages.
 type Rabbus interface {
+	// EmitAsync emits a message to RabbitMQ, but does not wait for the response from broker.
 	EmitAsync() chan<- Message
+	// EmitErr returns an error if encoding payload fails, or if after circuit breaker is open or retries attempts exceed.
 	EmitErr() <-chan error
+	// EmitOk returns true when the message was sent.
 	EmitOk() <-chan bool
+	// Listen to a message from RabbitMQ, returns
+	// an error if exchange, queue name and function handler not passed or if an error occurred while creating
+	// amqp consumer.
 	Listen(ListenConfig) (chan ConsumerMessage, error)
+	// Close attempt to close channel and connection.
 	Close()
 }
 
@@ -47,19 +54,28 @@ type Config struct {
 
 // Message carries fields for sending messages.
 type Message struct {
-	Exchange     string
-	Kind         string
-	Key          string
-	Payload      interface{}
+	// Exchange the exchange name.
+	Exchange string
+	// Kind the exchange type.
+	Kind string
+	// Key the routing key name.
+	Key string
+	// Payload the message payload.
+	Payload interface{}
+	// DeliveryMode indicates if the is Persistent or Transient.
 	DeliveryMode uint8
 }
 
 // ListenConfig carries fields for listening messages.
 type ListenConfig struct {
+	// Exchange the exchange name.
 	Exchange string
-	Kind     string
-	Key      string
-	Queue    string
+	// Kind the exchange type.
+	Kind string
+	// Key the routing key name.
+	Key string
+	// Queue the queue name
+	Queue string
 }
 
 // Delivery wraps amqp.Delivery struct
