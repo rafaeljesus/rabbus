@@ -27,12 +27,22 @@ type Rabbus interface {
 
 // Config carries the variables to tune a newly started rabbus.
 type Config struct {
-	Dsn       string
-	Attempts  int
+	// Dsn is the amqp url address.
+	Dsn string
+	// Attempts is the max number of retries on broker outages.
+	Attempts int
+	// Threshold when a threshold of failures has been reached, future calls to the broker will not run.
+	// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
+	// will start running the function again
 	Threshold int64
-	Timeout   time.Duration
-	Sleep     time.Duration
-	Durable   bool
+	// Timeout when a timeout has been reached, future calls to the broker will not run.
+	// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
+	// will start running the function again
+	Timeout time.Duration
+	// Sleep is the sleep time of the retry mechanism.
+	Sleep time.Duration
+	// Durable indicates of the queue will survive broker restarts. Default to true.
+	Durable bool
 }
 
 // Message carries fields for sending messages.
