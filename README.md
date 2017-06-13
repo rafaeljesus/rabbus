@@ -1,8 +1,8 @@
 ## Rabbus 🚌 ✨
 
-* A tiny wrapper over [amqp](github.com/streadway/amqp) exchanges and queues.
+* A tiny wrapper over [amqp](https://github.com/streadway/amqp) exchanges and queues.
 * Automatic retries and exponential backoff for sending messages.
-* Make use of [circuit breaker](github.com/rubyist/circuitbreaker).
+* Make use of [circuit breaker](https://github.com/rubyist/circuitbreaker).
 * Automatic reconnect to RabbitMQ broker.
 * Golang channel API.
 
