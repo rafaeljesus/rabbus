@@ -5,7 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rafaeljesus/rabbus/circuitbreaker"
+	"github.com/rafaeljesus/retry-go"
+	"github.com/sony/gobreaker"
 	"github.com/streadway/amqp"
 )
 
@@ -36,20 +37,20 @@ type Rabbus interface {
 type Config struct {
 	// Dsn is the amqp url address.
 	Dsn string
-	// Attempts is the max number of retries on broker outages.
-	Attempts int
-	// Threshold when a threshold of failures has been reached, future calls to the broker will not run.
-	// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
-	// will start running the function again
-	Threshold int64
-	// Timeout when a timeout has been reached, future calls to the broker will not run.
-	// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
-	// will start running the function again
-	Timeout time.Duration
-	// Sleep is the sleep time of the retry mechanism.
-	Sleep time.Duration
 	// Durable indicates of the queue will survive broker restarts. Default to true.
 	Durable bool
+	// Attempts is the max number of retries on broker outages.
+	Attempts int
+	// Sleep is the sleep time of the retry mechanism.
+	Sleep time.Duration
+	// Interval is the cyclic period of the closed state for CircuitBreaker to clear the internal counts,
+	// If Interval is 0, CircuitBreaker doesn't clear the internal counts during the closed state.
+	Interval time.Duration
+	// Timeout is the period of the open state, after which the state of CircuitBreaker becomes half-open.
+	// If Timeout is 0, the timeout value of CircuitBreaker is set to 60 seconds.
+	Timeout time.Duration
+	// OnStateChange is called whenever the state of CircuitBreaker changes.
+	OnStateChange func(name, from, to string)
 }
 
 // Message carries fields for sending messages.
@@ -85,13 +86,13 @@ type Delivery struct {
 
 type rabbus struct {
 	sync.RWMutex
-	conn           *amqp.Connection
-	ch             *amqp.Channel
-	circuitbreaker circuit.Breaker
-	emit           chan Message
-	emitErr        chan error
-	emitOk         chan struct{}
-	config         Config
+	conn    *amqp.Connection
+	ch      *amqp.Channel
+	breaker *gobreaker.CircuitBreaker
+	emit    chan Message
+	emitErr chan error
+	emitOk  chan struct{}
+	config  Config
 }
 
 // NewRabbus returns a new Rabbus configured with the
@@ -108,14 +109,23 @@ func NewRabbus(c Config) (Rabbus, error) {
 		return nil, err
 	}
 
+	st := gobreaker.Settings{
+		Name:     "Rabbus",
+		Interval: c.Interval,
+		Timeout:  c.Timeout,
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			c.OnStateChange(name, from.String(), to.String())
+		},
+	}
+
 	r := &rabbus{
-		conn:           conn,
-		ch:             ch,
-		circuitbreaker: circuit.NewThresholdBreaker(c.Threshold, c.Attempts, c.Sleep),
-		emit:           make(chan Message),
-		emitErr:        make(chan error),
-		emitOk:         make(chan struct{}),
-		config:         c,
+		conn:    conn,
+		ch:      ch,
+		breaker: gobreaker.NewCircuitBreaker(st),
+		emit:    make(chan Message),
+		emitErr: make(chan error),
+		emitOk:  make(chan struct{}),
+		config:  c,
 	}
 
 	go r.register()
@@ -198,26 +208,27 @@ func (r *rabbus) register() {
 }
 
 func (r *rabbus) produce(m Message) {
-	err := r.circuitbreaker.Call(func() error {
-		body, err := json.Marshal(m.Payload)
-		if err != nil {
-			return err
-		}
-
-		if m.DeliveryMode == 0 {
-			m.DeliveryMode = Persistent
-		}
-
-		return r.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
-			ContentType:     "application/json",
-			ContentEncoding: "UTF-8",
-			DeliveryMode:    m.DeliveryMode,
-			Timestamp:       time.Now(),
-			Body:            body,
-		})
-	}, r.config.Timeout)
-
+	body, err := json.Marshal(m.Payload)
 	if err != nil {
+		r.emitErr <- err
+		return
+	}
+
+	if m.DeliveryMode == 0 {
+		m.DeliveryMode = Persistent
+	}
+
+	if _, err := r.breaker.Execute(func() (interface{}, error) {
+		return nil, retry.Do(func() error {
+			return r.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
+				ContentType:     "application/json",
+				ContentEncoding: "UTF-8",
+				DeliveryMode:    m.DeliveryMode,
+				Timestamp:       time.Now(),
+				Body:            body,
+			})
+		}, r.config.Attempts, r.config.Sleep)
+	}); err != nil {
 		r.emitErr <- err
 		return
 	}

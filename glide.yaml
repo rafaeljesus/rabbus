@@ -2,5 +2,5 @@ package: github.com/rafaeljesus/rabbus
 import:
 - package: github.com/rubyist/circuitbreaker
   version: v2.2.0
-- package: github.com/streadway/amqp
 - package: github.com/rafaeljesus/retry-go
+- package: github.com/sony/gobreaker

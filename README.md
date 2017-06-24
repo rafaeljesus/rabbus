@@ -2,7 +2,7 @@
 
 * A tiny wrapper over [amqp](https://github.com/streadway/amqp) exchanges and queues.
 * Automatic retries and exponential backoff for sending messages.
-* Make use of [circuit breaker](https://github.com/rubyist/circuitbreaker).
+* Make use of [gobreaker](https://github.com/sony/gobreaker).
 * Automatic reconnect to RabbitMQ broker.
 * Golang channel API.
 
@@ -23,8 +23,6 @@ import (
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
     Dsn      : "amqp://guest:guest@localhost:5672",
-    Threshold: 10,
-    Timeout  : time.Second * 2,
     Attempts : 5,
     Sleep     : time.Second * 2,
     Durable  : true,
@@ -56,8 +54,6 @@ import (
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
     Dsn       : "amqp://guest:guest@localhost:5672",
-    Threshold : 10,
-    Timeout   : time.Second * 2,
     Attempts  : 3,
     Sleep     : time.Second * 2,
     Durable   : true,
