@@ -23,7 +23,7 @@ type Rabbus interface {
 	// EmitErr returns an error if encoding payload fails, or if after circuit breaker is open or retries attempts exceed.
 	EmitErr() <-chan error
 	// EmitOk returns true when the message was sent.
-	EmitOk() <-chan bool
+	EmitOk() <-chan struct{}
 	// Listen to a message from RabbitMQ, returns
 	// an error if exchange, queue name and function handler not passed or if an error occurred while creating
 	// amqp consumer.
@@ -90,7 +90,7 @@ type rabbus struct {
 	circuitbreaker circuit.Breaker
 	emit           chan Message
 	emitErr        chan error
-	emitOk         chan bool
+	emitOk         chan struct{}
 	config         Config
 }
 
@@ -114,7 +114,7 @@ func NewRabbus(c Config) (Rabbus, error) {
 		circuitbreaker: circuit.NewThresholdBreaker(c.Threshold, c.Attempts, c.Sleep),
 		emit:           make(chan Message),
 		emitErr:        make(chan error),
-		emitOk:         make(chan bool),
+		emitOk:         make(chan struct{}),
 		config:         c,
 	}
 
@@ -137,7 +137,7 @@ func (r *rabbus) EmitErr() <-chan error {
 }
 
 // EmitOk returns true when the message was sent.
-func (r *rabbus) EmitOk() <-chan bool {
+func (r *rabbus) EmitOk() <-chan struct{} {
 	return r.emitOk
 }
 
@@ -222,7 +222,7 @@ func (r *rabbus) produce(m Message) {
 		return
 	}
 
-	r.emitOk <- true
+	r.emitOk <- struct{}{}
 }
 
 func notifyClose(dsn string, r *rabbus) {
