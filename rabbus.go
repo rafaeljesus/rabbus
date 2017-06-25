@@ -49,6 +49,10 @@ type Config struct {
 	// Timeout is the period of the open state, after which the state of CircuitBreaker becomes half-open.
 	// If Timeout is 0, the timeout value of CircuitBreaker is set to 60 seconds.
 	Timeout time.Duration
+	// Threshold when a threshold of failures has been reached, future calls to the broker will not run.
+	// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
+	// will start running the function again. Default value is 5.
+	Threshold uint32
 	// OnStateChange is called whenever the state of CircuitBreaker changes.
 	OnStateChange func(name, from, to string)
 }
@@ -109,10 +113,17 @@ func NewRabbus(c Config) (Rabbus, error) {
 		return nil, err
 	}
 
+	if c.Threshold == 0 {
+		c.Threshold = 5
+	}
+
 	st := gobreaker.Settings{
 		Name:     "Rabbus",
 		Interval: c.Interval,
 		Timeout:  c.Timeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures > c.Threshold
+		},
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
 			c.OnStateChange(name, from.String(), to.String())
 		},

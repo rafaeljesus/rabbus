@@ -15,10 +15,11 @@ var (
 
 func main() {
 	r, err := rabbus.NewRabbus(rabbus.Config{
-		Dsn:      RABBUS_DSN,
-		Attempts: 1,
-		Timeout:  time.Second * 2,
-		Durable:  true,
+		Dsn:       RABBUS_DSN,
+		Attempts:  1,
+		Timeout:   time.Second * 2,
+		Threshold: 3,
+		Durable:   true,
 	})
 	if err != nil {
 		log.Print(err)
