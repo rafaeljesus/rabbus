@@ -14,6 +14,10 @@ const (
 	Transient uint8 = 1
 	// Persistent messages will be restored to durable queues and lost on non-durable queues during server restart.
 	Persistent uint8 = 2
+	// ContentTypeJSON define json content type
+	ContentTypeJSON string = "application/json"
+	// ContentTypePlain define plain text content type
+	ContentTypePlain string = "plain/text"
 )
 
 // Rabbus exposes a interface for emitting and listening for messages.
@@ -65,7 +69,7 @@ type Message struct {
 	// Key the routing key name.
 	Key string
 	// Payload the message payload.
-	Payload []byte
+	Payload interface{}
 	// DeliveryMode indicates if the is Persistent or Transient.
 	DeliveryMode uint8
 	// ContentType the message content-type.
@@ -226,7 +230,7 @@ func (r *rabbus) produce(m Message) {
 	}
 
 	if m.ContentType == "" {
-		m.ContentType = "text/plain"
+		m.ContentType = ContentTypeJson
 	}
 
 	if m.DeliveryMode == 0 {
