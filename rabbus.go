@@ -69,7 +69,7 @@ type Message struct {
 	// Key the routing key name.
 	Key string
 	// Payload the message payload.
-	Payload interface{}
+	Payload []byte
 	// DeliveryMode indicates if the is Persistent or Transient.
 	DeliveryMode uint8
 	// ContentType the message content-type.
@@ -230,7 +230,7 @@ func (r *rabbus) produce(m Message) {
 	}
 
 	if m.ContentType == "" {
-		m.ContentType = ContentTypeJson
+		m.ContentType = ContentTypeJSON
 	}
 
 	if m.DeliveryMode == 0 {
