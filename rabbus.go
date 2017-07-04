@@ -226,7 +226,7 @@ func (r *rabbus) produce(m Message) {
 	}
 
 	if m.ContentType == "" {
-		m.ContentType = "application/json"
+		m.ContentType = "text/plain"
 	}
 
 	if m.DeliveryMode == 0 {
