@@ -1,7 +1,6 @@
 package rabbus
 
 import (
-	"encoding/json"
 	"sync"
 	"time"
 
@@ -15,6 +14,10 @@ const (
 	Transient uint8 = 1
 	// Persistent messages will be restored to durable queues and lost on non-durable queues during server restart.
 	Persistent uint8 = 2
+	// ContentTypeJSON define json content type
+	ContentTypeJSON string = "application/json"
+	// ContentTypePlain define plain text content type
+	ContentTypePlain string = "plain/text"
 )
 
 // Rabbus exposes a interface for emitting and listening for messages.
@@ -66,9 +69,11 @@ type Message struct {
 	// Key the routing key name.
 	Key string
 	// Payload the message payload.
-	Payload interface{}
+	Payload []byte
 	// DeliveryMode indicates if the is Persistent or Transient.
 	DeliveryMode uint8
+	// ContentType the message content-type.
+	ContentType string
 }
 
 // ListenConfig carries fields for listening messages.
@@ -219,10 +224,13 @@ func (r *rabbus) register() {
 }
 
 func (r *rabbus) produce(m Message) {
-	body, err := json.Marshal(m.Payload)
-	if err != nil {
+	if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
 		r.emitErr <- err
 		return
+	}
+
+	if m.ContentType == "" {
+		m.ContentType = ContentTypeJSON
 	}
 
 	if m.DeliveryMode == 0 {
@@ -232,11 +240,11 @@ func (r *rabbus) produce(m Message) {
 	if _, err := r.breaker.Execute(func() (interface{}, error) {
 		return nil, retry.Do(func() error {
 			return r.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
-				ContentType:     "application/json",
+				ContentType:     m.ContentType,
 				ContentEncoding: "UTF-8",
 				DeliveryMode:    m.DeliveryMode,
 				Timestamp:       time.Now(),
-				Body:            body,
+				Body:            m.Payload,
 			})
 		}, r.config.Attempts, r.config.Sleep)
 	}); err != nil {
