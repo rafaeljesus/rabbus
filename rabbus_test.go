@@ -1,6 +1,7 @@
 package rabbus
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -101,4 +102,40 @@ func TestRabbusClose(t *testing.T) {
 	}
 
 	r.Close()
+}
+
+func BenchmarkEmitAsync(b *testing.B) {
+	r, err := NewRabbus(Config{
+		Dsn:      RABBUS_DSN,
+		Attempts: 1,
+		Timeout:  time.Second * 2,
+		Durable:  false,
+	})
+	if err != nil {
+		b.Errorf("Expected to init rabbus %s", err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(b.N)
+	go func() {
+		for {
+			select {
+			case <-r.EmitOk():
+				wg.Done()
+			case err := <-r.EmitErr():
+				b.Fatalf("Expected to emit message, receive error: %v", err)
+			}
+		}
+	}()
+
+	for n := 0; n < b.N; n++ {
+		ex := "test_bench_ex" + strconv.Itoa(n%10)
+		r.EmitAsync() <- Message{
+			Exchange:     ex,
+			Kind:         "direct",
+			Key:          "test_key",
+			Payload:      []byte(`foo`),
+			DeliveryMode: Persistent,
+		}
+	}
+	wg.Wait()
 }

@@ -95,13 +95,14 @@ type Delivery struct {
 
 type rabbus struct {
 	sync.RWMutex
-	conn    *amqp.Connection
-	ch      *amqp.Channel
-	breaker *gobreaker.CircuitBreaker
-	emit    chan Message
-	emitErr chan error
-	emitOk  chan struct{}
-	config  Config
+	conn       *amqp.Connection
+	ch         *amqp.Channel
+	breaker    *gobreaker.CircuitBreaker
+	emit       chan Message
+	emitErr    chan error
+	emitOk     chan struct{}
+	config     Config
+	exDeclared map[string]struct{}
 }
 
 // NewRabbus returns a new Rabbus configured with the
@@ -135,13 +136,14 @@ func NewRabbus(c Config) (Rabbus, error) {
 	}
 
 	r := &rabbus{
-		conn:    conn,
-		ch:      ch,
-		breaker: gobreaker.NewCircuitBreaker(st),
-		emit:    make(chan Message),
-		emitErr: make(chan error),
-		emitOk:  make(chan struct{}),
-		config:  c,
+		conn:       conn,
+		ch:         ch,
+		breaker:    gobreaker.NewCircuitBreaker(st),
+		emit:       make(chan Message),
+		emitErr:    make(chan error),
+		emitOk:     make(chan struct{}),
+		config:     c,
+		exDeclared: make(map[string]struct{}),
 	}
 
 	go r.register()
@@ -224,9 +226,12 @@ func (r *rabbus) register() {
 }
 
 func (r *rabbus) produce(m Message) {
-	if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
-		r.emitErr <- err
-		return
+	if _, ok := r.exDeclared[m.Exchange]; !ok {
+		if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
+			r.emitErr <- err
+			return
+		}
+		r.exDeclared[m.Exchange] = struct{}{}
 	}
 
 	if m.ContentType == "" {
