@@ -74,6 +74,8 @@ type Message struct {
 	DeliveryMode uint8
 	// ContentType the message content-type.
 	ContentType string
+	// Headers the message application headers
+	Headers map[string]interface{}
 }
 
 // ListenConfig carries fields for listening messages.
@@ -245,6 +247,7 @@ func (r *rabbus) produce(m Message) {
 	if _, err := r.breaker.Execute(func() (interface{}, error) {
 		return nil, retry.Do(func() error {
 			return r.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
+				Headers:         amqp.Table(m.Headers),
 				ContentType:     m.ContentType,
 				ContentEncoding: "UTF-8",
 				DeliveryMode:    m.DeliveryMode,
