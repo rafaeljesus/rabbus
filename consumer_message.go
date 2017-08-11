@@ -35,6 +35,8 @@ type ConsumerMessage struct {
 	DeliveryTag  uint64
 	Redelivered  bool
 	Exchange     string
+	// Headers application or header exchange table
+	Headers map[string]interface{}
 	// Key basic.publish routing key
 	Key  string
 	Body []byte
@@ -57,6 +59,7 @@ func newConsumerMessage(m amqp.Delivery) ConsumerMessage {
 		DeliveryTag:     m.DeliveryTag,
 		Redelivered:     m.Redelivered,
 		Exchange:        m.Exchange,
+		Headers:         m.Headers,
 		Key:             m.RoutingKey,
 		Body:            m.Body,
 	}
