@@ -58,6 +58,15 @@ type Config struct {
 	Threshold uint32
 	// OnStateChange is called whenever the state of CircuitBreaker changes.
 	OnStateChange func(name, from, to string)
+	// Qos controls how many messages or how many bytes will be consumed before receiving delivery acks
+	Qos Qos
+}
+
+// Qos controls how many messages or how many bytes the server will try to keep on the network for consumers before receiving delivery acks.
+type Qos struct {
+	PrefetchCount int
+	PrefetchSize  int
+	Global        bool
 }
 
 // Message carries fields for sending messages.
@@ -117,6 +126,11 @@ func NewRabbus(c Config) (Rabbus, error) {
 	}
 
 	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	err = ch.Qos(c.Qos.PrefetchCount, c.Qos.PrefetchSize, c.Qos.Global)
 	if err != nil {
 		return nil, err
 	}
