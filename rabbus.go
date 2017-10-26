@@ -49,6 +49,9 @@ type Config struct {
 	// Interval is the cyclic period of the closed state for CircuitBreaker to clear the internal counts,
 	// If Interval is 0, CircuitBreaker doesn't clear the internal counts during the closed state.
 	Interval time.Duration
+	// PassiveExchange forces passive connection with all exchanges using
+	// amqp's ExchangeDeclarePassive instead the default ExchangeDeclare
+	PassiveExchange bool
 	// Timeout is the period of the open state, after which the state of CircuitBreaker becomes half-open.
 	// If Timeout is 0, the timeout value of CircuitBreaker is set to 60 seconds.
 	Timeout time.Duration
@@ -204,15 +207,10 @@ func (r *rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, ErrMissingQueue
 	}
 
-	if c.PassiveExchange {
-		if err := r.ch.ExchangeDeclarePassive(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := r.ch.ExchangeDeclare(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
-			return nil, err
-		}
+	if err := declareExchange(r.ch, c.Exchange, c.Kind, r.config); err != nil {
+		return nil, err
 	}
+	r.exDeclared[c.Exchange] = struct{}{}
 
 	q, err := r.ch.QueueDeclare(c.Queue, r.config.Durable, false, false, false, nil)
 	if err != nil {
@@ -252,7 +250,8 @@ func (r *rabbus) register() {
 
 func (r *rabbus) produce(m Message) {
 	if _, ok := r.exDeclared[m.Exchange]; !ok {
-		if err := r.ch.ExchangeDeclare(m.Exchange, m.Kind, r.config.Durable, false, false, false, nil); err != nil {
+		err := declareExchange(r.ch, m.Exchange, m.Kind, r.config)
+		if err != nil {
 			r.emitErr <- err
 			return
 		}
@@ -311,4 +310,17 @@ func notifyClose(dsn string, r *rabbus) {
 			break
 		}
 	}
+}
+
+func declareExchange(ch *amqp.Channel, ex, kind string, config Config) error {
+	if config.PassiveExchange {
+		if err := ch.ExchangeDeclarePassive(ex, kind, config.Durable, false, false, false, nil); err != nil {
+			return err
+		}
+	} else {
+		if err := ch.ExchangeDeclare(ex, kind, config.Durable, false, false, false, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
