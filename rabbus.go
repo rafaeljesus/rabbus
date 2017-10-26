@@ -95,6 +95,9 @@ type ListenConfig struct {
 	Kind string
 	// Key the routing key name.
 	Key string
+	// PassiveExchange determines a passive exchange connection it uses
+	// amqp's ExchangeDeclarePassive instead the default ExchangeDeclare
+	PassiveExchange bool
 	// Queue the queue name
 	Queue string
 }
@@ -201,8 +204,14 @@ func (r *rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, ErrMissingQueue
 	}
 
-	if err := r.ch.ExchangeDeclare(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
-		return nil, err
+	if c.PassiveExchange {
+		if err := r.ch.ExchangeDeclarePassive(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.ch.ExchangeDeclare(c.Exchange, c.Kind, r.config.Durable, false, false, false, nil); err != nil {
+			return nil, err
+		}
 	}
 
 	q, err := r.ch.QueueDeclare(c.Queue, r.config.Durable, false, false, false, nil)
