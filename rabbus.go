@@ -250,8 +250,7 @@ func (r *rabbus) register() {
 
 func (r *rabbus) produce(m Message) {
 	if _, ok := r.exDeclared[m.Exchange]; !ok {
-		err := declareExchange(r.ch, m.Exchange, m.Kind, r.config)
-		if err != nil {
+		if err := declareExchange(r.ch, m.Exchange, m.Kind, r.config); err != nil {
 			r.emitErr <- err
 			return
 		}
@@ -314,13 +313,8 @@ func notifyClose(dsn string, r *rabbus) {
 
 func declareExchange(ch *amqp.Channel, ex, kind string, config Config) error {
 	if config.PassiveExchange {
-		if err := ch.ExchangeDeclarePassive(ex, kind, config.Durable, false, false, false, nil); err != nil {
-			return err
-		}
-	} else {
-		if err := ch.ExchangeDeclare(ex, kind, config.Durable, false, false, false, nil); err != nil {
-			return err
-		}
+		return ch.ExchangeDeclarePassive(ex, kind, config.Durable, false, false, false, nil)
 	}
-	return nil
+
+	return ch.ExchangeDeclare(ex, kind, config.Durable, false, false, false, nil)
 }
