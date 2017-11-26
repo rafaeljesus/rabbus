@@ -15,9 +15,11 @@ const (
 	// Persistent messages will be restored to durable queues and lost on non-durable queues during server restart.
 	Persistent uint8 = 2
 	// ContentTypeJSON define json content type
-	ContentTypeJSON string = "application/json"
+	ContentTypeJSON = "application/json"
 	// ContentTypePlain define plain text content type
-	ContentTypePlain string = "plain/text"
+	ContentTypePlain = "plain/text"
+
+	contentEncoding = "UTF-8"
 )
 
 // Rabbus exposes a interface for emitting and listening for messages.
@@ -148,8 +150,7 @@ func NewRabbus(c Config) (*RabbusInterpreter, error) {
 		return nil, err
 	}
 
-	err = ch.Qos(c.Qos.PrefetchCount, c.Qos.PrefetchSize, c.Qos.Global)
-	if err != nil {
+	if err := ch.Qos(c.Qos.PrefetchCount, c.Qos.PrefetchSize, c.Qos.Global); err != nil {
 		return nil, err
 	}
 
@@ -157,31 +158,33 @@ func NewRabbus(c Config) (*RabbusInterpreter, error) {
 		c.Threshold = 5
 	}
 
-	st := gobreaker.Settings{
-		Name:     "rabbus-circuit-breaker",
-		Interval: c.Breaker.Interval,
-		Timeout:  c.Breaker.Timeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures > c.Breaker.Threshold
-		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			c.Breaker.OnStateChange(name, from.String(), to.String())
-		},
-	}
-
-	ri := &RabbusInterpreter{
-		conn:       conn,
-		ch:         ch,
-		config:     c,
-		breaker:    gobreaker.NewCircuitBreaker(st),
-		emit:       make(chan Message),
-		emitErr:    make(chan error),
-		emitOk:     make(chan struct{}),
-		exDeclared: make(map[string]struct{}),
-	}
-
+	ri := newRabbusInterpreter(conn, ch, c)
 	go ri.register()
 	go ri.notifyClose()
+
+	return ri, nil
+}
+
+// NewRabbusWithManagedConn returns a new RabbusInterpreter configured with the
+// variables from the config parameter, or returning an non-nil err
+// if an error occurred while creating an channel.
+// This constructor doesn't create a amqp.Connection, and also doesn't re-connect on broker outages.
+func NewRabbusWithManagedConn(conn *amqp.Connection, c Config) (*RabbusInterpreter, error) {
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ch.Qos(c.Qos.PrefetchCount, c.Qos.PrefetchSize, c.Qos.Global); err != nil {
+		return nil, err
+	}
+
+	if c.Threshold == 0 {
+		c.Threshold = 5
+	}
+
+	ri := newRabbusInterpreter(nil, ch, c)
+	go ri.register()
 
 	return ri, nil
 }
@@ -252,7 +255,10 @@ func (ri *RabbusInterpreter) Close() (err error) {
 		return err
 	}
 
-	err = ri.conn.Close()
+	if ri.conn != nil {
+		err = ri.conn.Close()
+	}
+
 	return
 }
 
@@ -284,7 +290,7 @@ func (ri *RabbusInterpreter) produce(m Message) {
 			return ri.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
 				Headers:         amqp.Table(m.Headers),
 				ContentType:     m.ContentType,
-				ContentEncoding: "UTF-8",
+				ContentEncoding: contentEncoding,
 				DeliveryMode:    m.DeliveryMode,
 				Timestamp:       time.Now(),
 				Body:            m.Payload,
@@ -330,4 +336,31 @@ func (ri *RabbusInterpreter) declareExchange(ex, kind string) error {
 	}
 
 	return ri.ch.ExchangeDeclare(ex, kind, ri.config.Durable, false, false, false, nil)
+}
+
+func newRabbusInterpreter(conn *amqp.Connection, ch *amqp.Channel, c Config) *RabbusInterpreter {
+	return &RabbusInterpreter{
+		conn:       conn,
+		ch:         ch,
+		config:     c,
+		breaker:    gobreaker.NewCircuitBreaker(newBreakerSettings(c.Breaker)),
+		emit:       make(chan Message),
+		emitErr:    make(chan error),
+		emitOk:     make(chan struct{}),
+		exDeclared: make(map[string]struct{}),
+	}
+}
+
+func newBreakerSettings(c Breaker) gobreaker.Settings {
+	return gobreaker.Settings{
+		Name:     "rabbus-circuit-breaker",
+		Interval: c.Interval,
+		Timeout:  c.Timeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures > c.Threshold
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			c.OnStateChange(name, from.String(), to.String())
+		},
+	}
 }
