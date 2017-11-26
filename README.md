@@ -22,11 +22,17 @@ import (
 
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
-    Dsn         : "amqp://guest:guest@localhost:5672",
-    Durable     : true,
-    Retry       : rabbus.Retry {
-      Attempts  : 5,
-      Sleep     : time.Second * 2,
+    Dsn           : "amqp://guest:guest@localhost:5672",
+    Durable       : true,
+    Retry         : rabbus.Retry {
+      Attempts    : 5,
+      Sleep       : time.Second * 2,
+    },
+    CircuitBreaker: rabbus.CircuitBreaker {
+      Threshold: 3,
+      OnStateChange: func(name, from, to string) {
+        // do something when state is changed
+      }
     },
   })
 
@@ -55,11 +61,17 @@ import (
 
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
-    Dsn         : "amqp://guest:guest@localhost:5672",
-    Durable     : true,
-    Retry       : rabbus.Retry {
-      Attempts  : 3,
-      Sleep     : time.Second * 2,
+    Dsn           : "amqp://guest:guest@localhost:5672",
+    Durable       : true,
+    Retry         : rabbus.Retry {
+      Attempts    : 3,
+      Sleep       : time.Second * 2,
+    },
+    CircuitBreaker: rabbus.CircuitBreaker {
+      Threshold: 3,
+      OnStateChange: func(name, from, to string) {
+        // do something when state is changed
+      }
     },
   })
 

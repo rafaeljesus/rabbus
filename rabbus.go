@@ -63,6 +63,7 @@ type Retry struct {
 	Sleep time.Duration
 }
 
+// Breaker carries the configuration for circuit breaker
 type Breaker struct {
 	// Interval is the cyclic period of the closed state for CircuitBreaker to clear the internal counts,
 	// If Interval is 0, CircuitBreaker doesn't clear the internal counts during the closed state.
@@ -252,7 +253,7 @@ func (ri *RabbusInterpreter) Listen(c ListenConfig) (chan ConsumerMessage, error
 // Close attempt to close channel and connection.
 func (ri *RabbusInterpreter) Close() (err error) {
 	if err = ri.ch.Close(); err != nil {
-		return err
+		return
 	}
 
 	if ri.conn != nil {
