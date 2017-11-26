@@ -27,7 +27,7 @@ FAIL="${ERROR_COLOR}FAIL ${NO_COLOR}"
 TARGETS=$@
 
 echo "${OK_COLOR}Running tests: ${NO_COLOR}"
-go test -v -race -cover  ${TARGETS}
+go test -v -race -cover ${TARGETS} -bench .
 
 echo "${OK_COLOR}Vetting: ${NO_COLOR}"
 ERRS=$(go vet ${TARGETS} 2>&1 || true)

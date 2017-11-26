@@ -11,8 +11,8 @@ all: deps test
 
 deps:
 	@echo "$(OK_COLOR)==> Installing glide dependencies$(NO_COLOR)"
-	@go get -u github.com/Masterminds/glide
-	@glide install
+	@go get -u github.com/golang/dep/cmd/dep
+	@dep ensure
 
 test:
 	@/bin/sh -c "./build/test.sh $(allpackages)"

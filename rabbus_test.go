@@ -7,14 +7,66 @@ import (
 	"time"
 )
 
-var RABBUS_DSN = "amqp://localhost:5672"
+const (
+	RABBUS_DSN = "amqp://localhost:5672"
+)
 
-func TestRabbusListen(t *testing.T) {
+func TestRabbus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scenario string
+		function func(*testing.T)
+	}{
+		{
+			scenario: "rabbus listen",
+			function: testRabbusListen,
+		},
+		{
+			scenario: "rabbus listen validate",
+			function: testRabbusListenValidate,
+		},
+		{
+			scenario: "rabbus close",
+			function: testRabbusClose,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.scenario, func(t *testing.T) {
+			test.function(t)
+		})
+	}
+}
+
+func BenchmarkRabbus(b *testing.B) {
+	tests := []struct {
+		scenario string
+		function func(*testing.B)
+	}{
+		{
+			scenario: "rabbus emit async benchmark",
+			function: benchmarkEmitAsync,
+		},
+	}
+
+	for _, test := range tests {
+		b.Run(test.scenario, func(b *testing.B) {
+			test.function(b)
+		})
+	}
+}
+
+func testRabbusListen(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      RABBUS_DSN,
-		Attempts: 1,
-		Timeout:  time.Second * 2,
-		Durable:  true,
+		Dsn:     RABBUS_DSN,
+		Durable: true,
+		Retry: Retry{
+			Attempts: 1,
+		},
+		Breaker: Breaker{
+			Timeout: time.Second * 2,
+		},
 	})
 	if err != nil {
 		t.Errorf("Expected to init rabbus %s", err)
@@ -62,11 +114,15 @@ func TestRabbusListen(t *testing.T) {
 	wg.Wait()
 }
 
-func TestRabbusListen_Validate(t *testing.T) {
+func testRabbusListenValidate(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      RABBUS_DSN,
-		Attempts: 1,
-		Timeout:  time.Second * 2,
+		Dsn: RABBUS_DSN,
+		Retry: Retry{
+			Attempts: 1,
+		},
+		Breaker: Breaker{
+			Timeout: time.Second * 2,
+		},
 	})
 	if err != nil {
 		t.Errorf("Expected to init rabbus %s", err)
@@ -91,31 +147,43 @@ func TestRabbusListen_Validate(t *testing.T) {
 	}
 }
 
-func TestRabbusClose(t *testing.T) {
+func testRabbusClose(t *testing.T) {
 	r, err := NewRabbus(Config{
-		Dsn:      RABBUS_DSN,
-		Attempts: 1,
-		Timeout:  time.Second * 2,
+		Dsn: RABBUS_DSN,
+		Retry: Retry{
+			Attempts: 1,
+		},
+		Breaker: Breaker{
+			Timeout: time.Second * 2,
+		},
 	})
 	if err != nil {
 		t.Errorf("Expected to init rabbus %s", err)
 	}
 
-	r.Close()
+	if err = r.Close(); err != nil {
+		t.Errorf("Expected to close rabbus %s", err)
+	}
 }
 
-func BenchmarkEmitAsync(b *testing.B) {
+func benchmarkEmitAsync(b *testing.B) {
 	r, err := NewRabbus(Config{
-		Dsn:      RABBUS_DSN,
-		Attempts: 1,
-		Timeout:  time.Second * 2,
-		Durable:  false,
+		Dsn:     RABBUS_DSN,
+		Durable: false,
+		Retry: Retry{
+			Attempts: 1,
+		},
+		Breaker: Breaker{
+			Timeout: time.Second * 2,
+		},
 	})
 	if err != nil {
 		b.Errorf("Expected to init rabbus %s", err)
 	}
+
 	var wg sync.WaitGroup
 	wg.Add(b.N)
+
 	go func() {
 		for {
 			select {
