@@ -22,10 +22,12 @@ import (
 
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
-    Dsn      : "amqp://guest:guest@localhost:5672",
-    Attempts : 5,
-    Sleep     : time.Second * 2,
-    Durable  : true,
+    Dsn         : "amqp://guest:guest@localhost:5672",
+    Durable     : true,
+    Retry       : rabbus.Retry {
+      Attempts  : 5,
+      Sleep     : time.Second * 2,
+    },
   })
 
   select {
@@ -53,10 +55,12 @@ import (
 
 func main() {
   r, err := rabbus.NewRabbus(rabbus.Config{
-    Dsn       : "amqp://guest:guest@localhost:5672",
-    Attempts  : 3,
-    Sleep     : time.Second * 2,
-    Durable   : true,
+    Dsn         : "amqp://guest:guest@localhost:5672",
+    Durable     : true,
+    Retry       : rabbus.Retry {
+      Attempts  : 3,
+      Sleep     : time.Second * 2,
+    },
   })
 
   messages, err := r.Listen(rabbus.ListenConfig{
@@ -68,7 +72,7 @@ func main() {
   if err != nil {
     // handle errors during adding listener
   }
-  
+
   go func() {
     for m := range messages {
       m.Ack(false)
