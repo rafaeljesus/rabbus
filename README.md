@@ -2,7 +2,7 @@
 
 * A tiny wrapper over [amqp](https://github.com/streadway/amqp) exchanges and queues.
 * Automatic retries and exponential backoff for sending messages.
-* Make use of [gobreaker](https://github.com/sony/gobreaker).
+* Makes use of [gobreaker](https://github.com/sony/gobreaker).
 * Automatic reconnect to RabbitMQ broker.
 * Golang channel API.
 
@@ -12,7 +12,7 @@ go get -u github.com/rafaeljesus/rabbus
 ```
 
 ## Usage
-The rabbus package exposes a interface for emitting and listening RabbitMQ messages.
+The rabbus package exposes an interface for emitting and listening RabbitMQ messages.
 
 ### Emit
 ```go
