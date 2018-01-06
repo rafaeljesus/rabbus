@@ -13,6 +13,10 @@ const (
 	RABBUS_DSN = "amqp://localhost:5672"
 )
 
+var (
+	timeout = time.After(3 * time.Second)
+)
+
 func TestRabbus(t *testing.T) {
 	t.Parallel()
 
@@ -78,8 +82,11 @@ func testRabbusListen(t *testing.T) {
 		t.Errorf("Expected to init rabbus %s", err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	defer func(r Rabbus) {
+		if err = r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
 
 	messages, err := r.Listen(ListenConfig{
 		Exchange: "test_ex",
@@ -91,14 +98,18 @@ func testRabbusListen(t *testing.T) {
 		t.Errorf("Expected to listen message %s", err)
 	}
 
-	go func() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func(messages chan ConsumerMessage) {
 		for m := range messages {
 			m.Ack(false)
+			close(messages)
 			wg.Done()
 		}
-	}()
+	}(messages)
 
-	r.EmitAsync() <- Message{
+	msg := Message{
 		Exchange:     "test_ex",
 		Kind:         "direct",
 		Key:          "test_key",
@@ -106,21 +117,21 @@ func testRabbusListen(t *testing.T) {
 		DeliveryMode: Persistent,
 	}
 
-	go func() {
-		for {
-			select {
-			case <-r.EmitOk():
-			case <-r.EmitErr():
-				t.Errorf("Expected to emit message")
-				wg.Done()
-			}
+	r.EmitAsync() <- msg
+
+outer:
+	for {
+		select {
+		case <-r.EmitOk():
+			wg.Wait()
+			break outer
+		case <-r.EmitErr():
+			t.Errorf("Expected to emit message")
+			break outer
+		case <-timeout:
+			t.Errorf("parallel.Run() failed, got timeout error")
+			break outer
 		}
-	}()
-
-	wg.Wait()
-
-	if err = r.Close(); err != nil {
-		t.Errorf("Expected to close rabbus %s", err)
 	}
 }
 
@@ -144,8 +155,11 @@ func testRabbusWithManagedConnListen(t *testing.T) {
 		t.Errorf("Expected to init rabbus %s", err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	defer func(r Rabbus) {
+		if err = r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
 
 	messages, err := r.Listen(ListenConfig{
 		Exchange: "test_ex",
@@ -157,14 +171,18 @@ func testRabbusWithManagedConnListen(t *testing.T) {
 		t.Errorf("Expected to listen message %s", err)
 	}
 
-	go func() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func(messages chan ConsumerMessage) {
 		for m := range messages {
 			m.Ack(false)
+			close(messages)
 			wg.Done()
 		}
-	}()
+	}(messages)
 
-	r.EmitAsync() <- Message{
+	msg := Message{
 		Exchange:     "test_ex",
 		Kind:         "direct",
 		Key:          "test_key",
@@ -172,21 +190,21 @@ func testRabbusWithManagedConnListen(t *testing.T) {
 		DeliveryMode: Persistent,
 	}
 
-	go func() {
-		for {
-			select {
-			case <-r.EmitOk():
-			case <-r.EmitErr():
-				t.Errorf("Expected to emit message")
-				wg.Done()
-			}
+	r.EmitAsync() <- msg
+
+outer:
+	for {
+		select {
+		case <-r.EmitOk():
+			wg.Wait()
+			break outer
+		case <-r.EmitErr():
+			t.Errorf("Expected to emit message")
+			break outer
+		case <-timeout:
+			t.Errorf("parallel.Run() failed, got timeout error")
+			break outer
 		}
-	}()
-
-	wg.Wait()
-
-	if err = r.Close(); err != nil {
-		t.Errorf("Expected to close rabbus %s", err)
 	}
 }
 
@@ -204,26 +222,35 @@ func testRabbusListenValidate(t *testing.T) {
 		t.Errorf("Expected to init rabbus %s", err)
 	}
 
-	_, err = r.Listen(ListenConfig{})
-	if err == nil {
-		t.Errorf("Expected to validate Exchange")
+	defer func(r Rabbus) {
+		if err = r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
+
+	configs := []struct {
+		config ListenConfig
+		errMsg string
+	}{
+		{
+			config: ListenConfig{},
+			errMsg: "Expected to validate Exchange",
+		},
+		{
+			config: ListenConfig{Exchange: "foo"},
+			errMsg: "Expected to validate Kind",
+		},
+		{
+			config: ListenConfig{Exchange: "foo", Kind: "direct"},
+			errMsg: "Expected to validate Queue",
+		},
 	}
 
-	_, err = r.Listen(ListenConfig{Exchange: "foo"})
-	if err == nil {
-		t.Errorf("Expected to validate Kind")
-	}
-
-	_, err = r.Listen(ListenConfig{
-		Exchange: "foo2",
-		Kind:     "direct",
-	})
-	if err == nil {
-		t.Errorf("Expected to validate Queue")
-	}
-
-	if err = r.Close(); err != nil {
-		t.Errorf("Expected to close rabbus %s", err)
+	for _, c := range configs {
+		_, err := r.Listen(c.config)
+		if err == nil {
+			t.Errorf(c.errMsg)
+		}
 	}
 }
 
@@ -260,6 +287,12 @@ func benchmarkEmitAsync(b *testing.B) {
 	if err != nil {
 		b.Errorf("Expected to init rabbus %s", err)
 	}
+
+	defer func() {
+		if err = r.Close(); err != nil {
+			b.Errorf("Expected to close rabbus %s", err)
+		}
+	}()
 
 	var wg sync.WaitGroup
 	wg.Add(b.N)
