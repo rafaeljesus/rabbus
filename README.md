@@ -36,13 +36,13 @@ func main() {
 			},
 		},
 	}
-  if err != nil {
-    // handle error
-  }
+	if err != nil {
+		// handle error
+	}
 
 	defer func(r Rabbus) {
 		if err := r.Close(); err != nil {
-      // handle error
+			// handle error
 		}
 	}(r)
 
@@ -94,13 +94,13 @@ func main() {
 	}
 
 	r, err := rabbus.NewRabbus(config)
-  if err != nil {
-    // handle error
-  }
+	if err != nil {
+		// handle error
+	}
 
 	defer func(r Rabbus) {
 		if err := r.Close(); err != nil {
-      // handle error
+			// handle error
 		}
 	}(r)
 
