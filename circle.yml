@@ -8,8 +8,6 @@ machine:
 
 dependencies:
   pre:
-    - sudo add-apt-repository ppa:masterminds/glide -y
-    - sudo apt-get update
     - go get -x -u github.com/golang/lint/golint
     - mkdir -p "$IMPORT_PATH"
   override:
