@@ -10,20 +10,37 @@ import (
 
 var (
 	RABBUS_DSN = "amqp://localhost:5672"
+	timeout    = time.After(time.Second * 3)
 	wg         sync.WaitGroup
 )
 
 func main() {
-	r, err := rabbus.NewRabbus(rabbus.Config{
-		Dsn:       RABBUS_DSN,
-		Attempts:  1,
-		Timeout:   time.Second * 2,
-		Threshold: 3,
-		Durable:   true,
-	})
-	if err != nil {
-		log.Print(err)
+	config := rabbus.Config{
+		Dsn:     RABBUS_DSN,
+		Durable: true,
+		Retry: rabbus.Retry{
+			Attempts: 5,
+			Sleep:    time.Second * 2,
+		},
+		Breaker: rabbus.Breaker{
+			Threshold: 3,
+			OnStateChange: func(name, from, to string) {
+				// do something when state is changed
+			},
+		},
 	}
+
+	r, err := rabbus.NewRabbus(config)
+	if err != nil {
+		log.Fatalf("Failed to init rabbus connection %s", err)
+		return
+	}
+
+	defer func(r rabbus.Rabbus) {
+		if err := r.Close(); err != nil {
+			log.Fatalf("Failed to close rabbus connection %s", err)
+		}
+	}(r)
 
 	messages, err := r.Listen(rabbus.ListenConfig{
 		Exchange: "test_ex",
@@ -32,18 +49,21 @@ func main() {
 		Queue:    "test_q",
 	})
 	if err != nil {
-		log.Print(err)
+		log.Fatalf("Failed to create listener %s", err)
+		return
 	}
 
 	wg.Add(1)
-	go func() {
+	go func(messages chan rabbus.ConsumerMessage) {
 		for m := range messages {
 			m.Ack(false)
+			close(messages)
 			wg.Done()
+			log.Println("Message was consumed")
 		}
-	}()
+	}(messages)
 
-	r.EmitAsync() <- rabbus.Message{
+	msg := rabbus.Message{
 		Exchange:     "test_ex",
 		Kind:         "direct",
 		Key:          "test_key",
@@ -51,17 +71,22 @@ func main() {
 		DeliveryMode: rabbus.Persistent,
 	}
 
-	go func() {
-		for {
-			select {
-			case <-r.EmitOk():
-				log.Print("Message sent")
-			case <-r.EmitErr():
-				log.Print("Expected to emit message")
-				wg.Done()
-			}
-		}
-	}()
+	r.EmitAsync() <- msg
 
-	wg.Wait()
+outer:
+	for {
+		select {
+		case <-r.EmitOk():
+			log.Println("Message was sent")
+			wg.Wait()
+			log.Println("Done!")
+			break outer
+		case err := <-r.EmitErr():
+			log.Fatalf("Failed to send message %s", err)
+			break outer
+		case <-timeout:
+			log.Fatal("Timeout error during send message")
+			break outer
+		}
+	}
 }
