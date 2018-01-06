@@ -35,7 +35,7 @@ type Rabbus interface {
 	// amqp consumer.
 	Listen(ListenConfig) (chan ConsumerMessage, error)
 	// Close attempt to close channel and connection.
-	Close()
+	Close() error
 }
 
 // Config carries the variables to tune a newly started rabbus.
@@ -61,6 +61,8 @@ type Retry struct {
 	Attempts int
 	// Sleep is the sleep time of the retry mechanism.
 	Sleep time.Duration
+
+	reconnectSleep time.Duration
 }
 
 // Breaker carries the configuration for circuit breaker
@@ -157,6 +159,10 @@ func NewRabbus(c Config) (*RabbusInterpreter, error) {
 
 	if c.Threshold == 0 {
 		c.Threshold = 5
+	}
+
+	if c.Retry.Sleep == 0 {
+		c.Retry.reconnectSleep = time.Second * 10
 	}
 
 	ri := newRabbusInterpreter(conn, ch, c)
@@ -308,7 +314,7 @@ func (ri *RabbusInterpreter) produce(m Message) {
 func (ri *RabbusInterpreter) notifyClose() {
 	if err := <-ri.conn.NotifyClose(make(chan *amqp.Error)); err != nil {
 		for {
-			time.Sleep(ri.config.Retry.Sleep)
+			time.Sleep(ri.config.Retry.reconnectSleep)
 			conn, err := amqp.Dial(ri.config.Dsn)
 			if err != nil {
 				continue
