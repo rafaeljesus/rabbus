@@ -35,7 +35,7 @@ type Rabbus interface {
 	// amqp consumer.
 	Listen(ListenConfig) (chan ConsumerMessage, error)
 	// Close attempt to close channel and connection.
-	Close()
+	Close() error
 }
 
 // Config carries the variables to tune a newly started rabbus.
@@ -259,6 +259,10 @@ func (ri *RabbusInterpreter) Close() (err error) {
 	if ri.conn != nil {
 		err = ri.conn.Close()
 	}
+
+	close(ri.emit)
+	close(ri.emitErr)
+	close(ri.emitOk)
 
 	return
 }
