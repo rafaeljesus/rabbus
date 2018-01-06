@@ -288,16 +288,16 @@ func benchmarkEmitAsync(b *testing.B) {
 		b.Errorf("Expected to init rabbus %s", err)
 	}
 
-	defer func() {
+	defer func(r Rabbus) {
 		if err = r.Close(); err != nil {
 			b.Errorf("Expected to close rabbus %s", err)
 		}
-	}()
+	}(r)
 
 	var wg sync.WaitGroup
 	wg.Add(b.N)
 
-	go func() {
+	go func(r Rabbus) {
 		for {
 			select {
 			case <-r.EmitOk():
@@ -306,7 +306,7 @@ func benchmarkEmitAsync(b *testing.B) {
 				b.Fatalf("Expected to emit message, receive error: %v", err)
 			}
 		}
-	}()
+	}(r)
 
 	for n := 0; n < b.N; n++ {
 		ex := "test_bench_ex" + strconv.Itoa(n%10)
