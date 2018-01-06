@@ -17,79 +17,109 @@ The rabbus package exposes an interface for emitting and listening RabbitMQ mess
 ### Emit
 ```go
 import (
-  "github.com/rafaeljesus/rabbus"
+	"github.com/rafaeljesus/rabbus"
 )
 
 func main() {
-  r, err := rabbus.NewRabbus(rabbus.Config{
-    Dsn           : "amqp://guest:guest@localhost:5672",
-    Durable       : true,
-    Retry         : rabbus.Retry {
-      Attempts    : 5,
-      Sleep       : time.Second * 2,
-    },
-    CircuitBreaker: rabbus.CircuitBreaker {
-      Threshold: 3,
-      OnStateChange: func(name, from, to string) {
-        // do something when state is changed
-      }
-    },
-  })
+	timeout := time.After(time.Second * 3)
+	config := rabbus.Config{
+		Dsn:     RABBUS_DSN,
+		Durable: true,
+		Retry: rabbus.Retry{
+			Attempts: 5,
+			Sleep:    time.Second * 2,
+		},
+		Breaker: rabbus.Breaker{
+			Threshold: 3,
+			OnStateChange: func(name, from, to string) {
+				// do something when state is changed
+			},
+		},
+	}
+	if err != nil {
+		// handle error
+	}
 
-  select {
-    case r.EmitAsync() <- Message{
-      Exchange  : "test_ex",
-      Kind      : "topic",
-      Key       : "test_key",
-      Payload   : []byte(`foo`),
-    }
-    case r.EmitOk():
-     // message was sent
-    case r.EmitErr():
-     // failed to send message
-  }
+	defer func(r Rabbus) {
+		if err := r.Close(); err != nil {
+			// handle error
+		}
+	}(r)
+
+	msg := rabbus.Message{
+		Exchange: "test_ex",
+		Kind:     "topic",
+		Key:      "test_key",
+		Payload:  []byte(`foo`),
+	}
+
+	r.EmitAsync() <- msg
+
+	for {
+		select {
+		case <-r.EmitOk():
+			// message was sent
+		case <-r.EmitErr():
+			// failed to send message
+		case <-timeout:
+			// handle timeout error
+		}
+	}
 }
 ```
 
 ### Listen
 ```go
 import (
-  "encoding/json"
+	"encoding/json"
 
-  "github.com/rafaeljesus/rabbus"
+	"github.com/rafaeljesus/rabbus"
 )
 
 func main() {
-  r, err := rabbus.NewRabbus(rabbus.Config{
-    Dsn           : "amqp://guest:guest@localhost:5672",
-    Durable       : true,
-    Retry         : rabbus.Retry {
-      Attempts    : 3,
-      Sleep       : time.Second * 2,
-    },
-    CircuitBreaker: rabbus.CircuitBreaker {
-      Threshold: 3,
-      OnStateChange: func(name, from, to string) {
-        // do something when state is changed
-      }
-    },
-  })
+	timeout := time.After(time.Second * 3)
+	config := rabbus.Config{
+		Dsn:     RABBUS_DSN,
+		Durable: true,
+		Retry: rabbus.Retry{
+			Attempts: 5,
+			Sleep:    time.Second * 2,
+		},
+		Breaker: rabbus.Breaker{
+			Threshold: 3,
+			OnStateChange: func(name, from, to string) {
+				// do something when state is changed
+			},
+		},
+	}
 
-  messages, err := r.Listen(rabbus.ListenConfig{
-    Exchange: "events_ex",
-    Kind:     "topic",
-    Key:      "events_key",
-    Queue:    "events_q",
-  })
-  if err != nil {
-    // handle errors during adding listener
-  }
+	r, err := rabbus.NewRabbus(config)
+	if err != nil {
+		// handle error
+	}
 
-  go func() {
-    for m := range messages {
-      m.Ack(false)
-    }
-  }()
+	defer func(r Rabbus) {
+		if err := r.Close(); err != nil {
+			// handle error
+		}
+	}(r)
+
+	messages, err := r.Listen(rabbus.ListenConfig{
+		Exchange: "events_ex",
+		Kind:     "topic",
+		Key:      "events_key",
+		Queue:    "events_q",
+	})
+	if err != nil {
+		// handle errors during adding listener
+	}
+	defer close(messages)
+
+	go func(messages chan ConsumerMessage) {
+		for m := range messages {
+			m.Ack(false)
+		}
+	}(messages)
 }
 ```
 
