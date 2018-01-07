@@ -289,7 +289,7 @@ func benchmarkEmitAsync(b *testing.B) {
 	}
 
 	defer func(r Rabbus) {
-		if err = r.Close(); err != nil {
+		if err := r.Close(); err != nil {
 			b.Errorf("Expected to close rabbus %s", err)
 		}
 	}(r)
@@ -300,23 +300,29 @@ func benchmarkEmitAsync(b *testing.B) {
 	go func(r Rabbus) {
 		for {
 			select {
-			case <-r.EmitOk():
-				wg.Done()
-			case err := <-r.EmitErr():
-				b.Fatalf("Expected to emit message, receive error: %v", err)
+			case _, ok := <-r.EmitOk():
+				if ok {
+					wg.Done()
+				}
+			case _, ok := <-r.EmitErr():
+				if ok {
+					b.Fatalf("Expected to emit message, receive error: %v", err)
+				}
 			}
 		}
 	}(r)
 
 	for n := 0; n < b.N; n++ {
-		ex := "test_bench_ex" + strconv.Itoa(n%10)
-		r.EmitAsync() <- Message{
-			Exchange:     ex,
+		msg := Message{
+			Exchange:     "test_bench_ex" + strconv.Itoa(n%10),
 			Kind:         "direct",
 			Key:          "test_key",
 			Payload:      []byte(`foo`),
 			DeliveryMode: Persistent,
 		}
+
+		r.EmitAsync() <- msg
 	}
+
 	wg.Wait()
 }

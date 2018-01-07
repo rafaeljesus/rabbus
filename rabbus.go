@@ -258,6 +258,10 @@ func (ri *RabbusInterpreter) Listen(c ListenConfig) (chan ConsumerMessage, error
 
 // Close attempt to close channel and connection.
 func (ri *RabbusInterpreter) Close() (err error) {
+	close(ri.emit)
+	close(ri.emitOk)
+	close(ri.emitErr)
+
 	if err = ri.ch.Close(); err != nil {
 		return
 	}
