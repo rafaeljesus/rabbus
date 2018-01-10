@@ -121,6 +121,22 @@ type ListenConfig struct {
 	Queue string
 }
 
+func (lc ListenConfig) validate() error {
+	if lc.Exchange == "" {
+		return ErrMissingExchange
+	}
+
+	if lc.Kind == "" {
+		return ErrMissingKind
+	}
+
+	if lc.Queue == "" {
+		return ErrMissingQueue
+	}
+
+	return nil
+}
+
 // Delivery wraps amqp.Delivery struct
 type Delivery struct {
 	amqp.Delivery
@@ -143,12 +159,7 @@ type RabbusInterpreter struct {
 // variables from the config parameter, or returning an non-nil err
 // if an error occurred while creating connection and channel.
 func NewRabbus(c Config) (*RabbusInterpreter, error) {
-	conn, err := amqp.Dial(c.Dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	ch, err := conn.Channel()
+	conn, ch, err := createConnAndChan(c.Dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -166,31 +177,6 @@ func NewRabbus(c Config) (*RabbusInterpreter, error) {
 	}
 
 	ri := newRabbusInterpreter(conn, ch, c)
-	go ri.register()
-	go ri.notifyClose()
-
-	return ri, nil
-}
-
-// NewRabbusWithManagedConn returns a new RabbusInterpreter configured with the
-// variables from the config parameter, or returning an non-nil err
-// if an error occurred while creating an channel.
-// This constructor doesn't create a amqp.Connection, and also doesn't re-connect on broker outages.
-func NewRabbusWithManagedConn(conn *amqp.Connection, c Config) (*RabbusInterpreter, error) {
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := ch.Qos(c.Qos.PrefetchCount, c.Qos.PrefetchSize, c.Qos.Global); err != nil {
-		return nil, err
-	}
-
-	if c.Threshold == 0 {
-		c.Threshold = 5
-	}
-
-	ri := newRabbusInterpreter(nil, ch, c)
 	go ri.register()
 
 	return ri, nil
@@ -215,62 +201,29 @@ func (ri *RabbusInterpreter) EmitOk() <-chan struct{} {
 // an error if exchange, queue name and function handler not passed or if an error occurred while creating
 // amqp consumer.
 func (ri *RabbusInterpreter) Listen(c ListenConfig) (chan ConsumerMessage, error) {
-	if c.Exchange == "" {
-		return nil, ErrMissingExchange
-	}
-
-	if c.Kind == "" {
-		return nil, ErrMissingKind
-	}
-
-	if c.Queue == "" {
-		return nil, ErrMissingQueue
-	}
-
-	if err := ri.declareExchange(c.Exchange, c.Kind); err != nil {
-		return nil, err
-	}
-	ri.exDeclared[c.Exchange] = struct{}{}
-
-	q, err := ri.ch.QueueDeclare(c.Queue, ri.config.Durable, false, false, false, nil)
-	if err != nil {
+	if err := c.validate(); err != nil {
 		return nil, err
 	}
 
-	if err := ri.ch.QueueBind(q.Name, c.Key, c.Exchange, false, nil); err != nil {
-		return nil, err
-	}
-
-	msgs, err := ri.ch.Consume(q.Name, "", false, false, false, false, nil)
+	msgs, err := ri.createConsumer(c)
 	if err != nil {
 		return nil, err
 	}
 
 	messages := make(chan ConsumerMessage, 256)
-	go func(msgs <-chan amqp.Delivery, messages chan ConsumerMessage) {
-		for m := range msgs {
-			messages <- newConsumerMessage(m)
-		}
-	}(msgs, messages)
+	go ri.wrapMessage(c, msgs, messages)
+	go ri.observeClose(c, messages)
 
 	return messages, nil
 }
 
 // Close attempt to close channel and connection.
-func (ri *RabbusInterpreter) Close() (err error) {
+func (ri *RabbusInterpreter) Close() error {
 	close(ri.emit)
 	close(ri.emitOk)
 	close(ri.emitErr)
 
-	if err = ri.ch.Close(); err != nil {
-		return
-	}
-
-	if ri.conn != nil {
-		err = ri.conn.Close()
-	}
-
-	return
+	return ri.closeConnAndChan()
 }
 
 func (ri *RabbusInterpreter) register() {
@@ -296,16 +249,18 @@ func (ri *RabbusInterpreter) produce(m Message) {
 		m.DeliveryMode = Persistent
 	}
 
+	opts := amqp.Publishing{
+		Headers:         amqp.Table(m.Headers),
+		ContentType:     m.ContentType,
+		ContentEncoding: contentEncoding,
+		DeliveryMode:    m.DeliveryMode,
+		Timestamp:       time.Now(),
+		Body:            m.Payload,
+	}
+
 	if _, err := ri.breaker.Execute(func() (interface{}, error) {
 		return nil, retry.Do(func() error {
-			return ri.ch.Publish(m.Exchange, m.Key, false, false, amqp.Publishing{
-				Headers:         amqp.Table(m.Headers),
-				ContentType:     m.ContentType,
-				ContentEncoding: contentEncoding,
-				DeliveryMode:    m.DeliveryMode,
-				Timestamp:       time.Now(),
-				Body:            m.Payload,
-			})
+			return ri.ch.Publish(m.Exchange, m.Key, false, false, opts)
 		}, ri.config.Retry.Attempts, ri.config.Retry.Sleep)
 	}); err != nil {
 		ri.emitErr <- err
@@ -315,17 +270,42 @@ func (ri *RabbusInterpreter) produce(m Message) {
 	ri.emitOk <- struct{}{}
 }
 
-func (ri *RabbusInterpreter) notifyClose() {
+func (ri *RabbusInterpreter) createConsumer(c ListenConfig) (<-chan amqp.Delivery, error) {
+	if err := ri.declareExchange(c.Exchange, c.Kind); err != nil {
+		return nil, err
+	}
+
+	ri.exDeclared[c.Exchange] = struct{}{}
+
+	q, err := ri.ch.QueueDeclare(c.Queue, ri.config.Durable, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ri.ch.QueueBind(q.Name, c.Key, c.Exchange, false, nil); err != nil {
+		return nil, err
+	}
+
+	return ri.ch.Consume(q.Name, "", false, false, false, false, nil)
+}
+
+func (ri *RabbusInterpreter) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, targetChan chan ConsumerMessage) {
+	for {
+		m, ok := <-sourceChan
+		if ok {
+			targetChan <- newConsumerMessage(m)
+		}
+	}
+}
+
+func (ri *RabbusInterpreter) observeClose(c ListenConfig, messages chan ConsumerMessage) {
 	if err := <-ri.conn.NotifyClose(make(chan *amqp.Error)); err != nil {
 		for {
 			time.Sleep(ri.config.Retry.reconnectSleep)
-			conn, err := amqp.Dial(ri.config.Dsn)
-			if err != nil {
-				continue
-			}
 
-			ch, err := conn.Channel()
+			conn, ch, err := createConnAndChan(ri.config.Dsn)
 			if err != nil {
+				// if it fails to create amqp conn or channel it should try later
 				continue
 			}
 
@@ -334,8 +314,18 @@ func (ri *RabbusInterpreter) notifyClose() {
 			ri.ch = ch
 			ri.mu.Unlock()
 
-			go ri.notifyClose()
+			msgs, err := ri.createConsumer(c)
+			if err != nil {
+				// if it fails to re-create topologies it should close the conn and channel previously created
+				ri.closeConnAndChan()
+				// and try again later
+				continue
+			}
 
+			go ri.wrapMessage(c, msgs, messages)
+			go ri.observeClose(c, messages)
+
+			// at this point we successfully restablished the connection
 			break
 		}
 	}
@@ -347,6 +337,32 @@ func (ri *RabbusInterpreter) declareExchange(ex, kind string) error {
 	}
 
 	return ri.ch.ExchangeDeclare(ex, kind, ri.config.Durable, false, false, false, nil)
+}
+
+func (ri *RabbusInterpreter) closeConnAndChan() (err error) {
+	if err = ri.ch.Close(); err != nil {
+		return
+	}
+
+	if ri.conn != nil {
+		err = ri.conn.Close()
+	}
+
+	return
+}
+
+func createConnAndChan(dsn string) (*amqp.Connection, *amqp.Channel, error) {
+	conn, err := amqp.Dial(dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return conn, ch, nil
 }
 
 func newRabbusInterpreter(conn *amqp.Connection, ch *amqp.Channel, c Config) *RabbusInterpreter {
