@@ -43,10 +43,10 @@ func main() {
 	}(r)
 
 	messages, err := r.Listen(rabbus.ListenConfig{
-		Exchange: "test_ex",
+		Exchange: "pubsub_test_ex",
 		Kind:     "direct",
-		Key:      "test_key",
-		Queue:    "test_q",
+		Key:      "pubsub_test_key",
+		Queue:    "pubsub_test_q",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create listener %s", err)
@@ -64,9 +64,9 @@ func main() {
 	}(messages)
 
 	msg := rabbus.Message{
-		Exchange:     "test_ex",
+		Exchange:     "pubsub_test_ex",
 		Kind:         "direct",
-		Key:          "test_key",
+		Key:          "pubsub_test_key",
 		Payload:      []byte(`foo`),
 		DeliveryMode: rabbus.Persistent,
 	}
