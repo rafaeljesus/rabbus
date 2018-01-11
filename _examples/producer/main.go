@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"sync"
 	"time"
 
 	"github.com/rafaeljesus/rabbus"
@@ -57,8 +56,9 @@ outer:
 			log.Println("Message was sent")
 		case err := <-r.EmitErr():
 			log.Fatalf("Failed to send message %s", err)
+			break outer
 		case <-timeout:
-			log.Fatal("Timeout error during send message")
+			log.Println("Bye")
 			break outer
 		}
 	}
