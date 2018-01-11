@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"sync"
 	"time"
 
 	"github.com/rafaeljesus/rabbus"
@@ -11,7 +10,6 @@ import (
 var (
 	RABBUS_DSN = "amqp://localhost:5672"
 	timeout    = time.After(time.Second * 3)
-	wg         sync.WaitGroup
 )
 
 func main() {
@@ -20,7 +18,6 @@ func main() {
 		Durable: true,
 		Retry: rabbus.Retry{
 			Attempts: 5,
-			Sleep:    time.Second * 2,
 		},
 		Breaker: rabbus.Breaker{
 			Threshold: 3,
@@ -42,31 +39,10 @@ func main() {
 		}
 	}(r)
 
-	messages, err := r.Listen(rabbus.ListenConfig{
-		Exchange: "test_ex",
-		Kind:     "direct",
-		Key:      "test_key",
-		Queue:    "test_q",
-	})
-	if err != nil {
-		log.Fatalf("Failed to create listener %s", err)
-		return
-	}
-
-	wg.Add(1)
-	go func(messages chan rabbus.ConsumerMessage) {
-		for m := range messages {
-			m.Ack(false)
-			close(messages)
-			wg.Done()
-			log.Println("Message was consumed")
-		}
-	}(messages)
-
 	msg := rabbus.Message{
-		Exchange:     "test_ex",
+		Exchange:     "producer_test_ex",
 		Kind:         "direct",
-		Key:          "test_key",
+		Key:          "producer_test_key",
 		Payload:      []byte(`foo`),
 		DeliveryMode: rabbus.Persistent,
 	}
@@ -78,14 +54,11 @@ outer:
 		select {
 		case <-r.EmitOk():
 			log.Println("Message was sent")
-			wg.Wait()
-			log.Println("Done!")
-			break outer
 		case err := <-r.EmitErr():
 			log.Fatalf("Failed to send message %s", err)
 			break outer
 		case <-timeout:
-			log.Fatal("Timeout error during send message")
+			log.Println("Bye")
 			break outer
 		}
 	}
