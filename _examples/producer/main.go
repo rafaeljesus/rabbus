@@ -11,7 +11,6 @@ import (
 var (
 	RABBUS_DSN = "amqp://localhost:5672"
 	timeout    = time.After(time.Second * 3)
-	wg         sync.WaitGroup
 )
 
 func main() {
@@ -56,12 +55,8 @@ outer:
 		select {
 		case <-r.EmitOk():
 			log.Println("Message was sent")
-			wg.Wait()
-			log.Println("Done!")
-			break outer
 		case err := <-r.EmitErr():
 			log.Fatalf("Failed to send message %s", err)
-			break outer
 		case <-timeout:
 			log.Fatal("Timeout error during send message")
 			break outer
