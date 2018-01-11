@@ -151,6 +151,7 @@ type RabbusInterpreter struct {
 	emit       chan Message
 	emitErr    chan error
 	emitOk     chan struct{}
+	reconn     chan struct{}
 	config     Config
 	exDeclared map[string]struct{}
 }
@@ -178,6 +179,7 @@ func NewRabbus(c Config) (*RabbusInterpreter, error) {
 
 	ri := newRabbusInterpreter(conn, ch, c)
 	go ri.register()
+	go ri.listenClose()
 
 	return ri, nil
 }
@@ -212,7 +214,7 @@ func (ri *RabbusInterpreter) Listen(c ListenConfig) (chan ConsumerMessage, error
 
 	messages := make(chan ConsumerMessage, 256)
 	go ri.wrapMessage(c, msgs, messages)
-	go ri.observeClose(c, messages)
+	go ri.listenReconn(c, messages)
 
 	return messages, nil
 }
@@ -222,6 +224,7 @@ func (ri *RabbusInterpreter) Close() error {
 	close(ri.emit)
 	close(ri.emitOk)
 	close(ri.emitErr)
+	close(ri.reconn)
 
 	return ri.closeConnAndChan()
 }
@@ -298,14 +301,14 @@ func (ri *RabbusInterpreter) wrapMessage(c ListenConfig, sourceChan <-chan amqp.
 	}
 }
 
-func (ri *RabbusInterpreter) observeClose(c ListenConfig, messages chan ConsumerMessage) {
+func (ri *RabbusInterpreter) listenClose() {
 	if err := <-ri.conn.NotifyClose(make(chan *amqp.Error)); err != nil {
 		for {
 			time.Sleep(ri.config.Retry.reconnectSleep)
 
 			conn, ch, err := createConnAndChan(ri.config.Dsn)
 			if err != nil {
-				// if it fails to create amqp conn or channel it should try later
+				// try again later
 				continue
 			}
 
@@ -314,18 +317,27 @@ func (ri *RabbusInterpreter) observeClose(c ListenConfig, messages chan Consumer
 			ri.ch = ch
 			ri.mu.Unlock()
 
+			go ri.listenClose()
+
+			ri.reconn <- struct{}{}
+
+			break
+		}
+	}
+}
+
+func (ri *RabbusInterpreter) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
+	for {
+		_, ok := <-ri.reconn
+		if ok {
 			msgs, err := ri.createConsumer(c)
 			if err != nil {
-				// if it fails to re-create topologies it should close the conn and channel previously created
 				ri.closeConnAndChan()
-				// and try again later
 				continue
 			}
 
 			go ri.wrapMessage(c, msgs, messages)
-			go ri.observeClose(c, messages)
-
-			// at this point we successfully restablished the connection
+			go ri.listenReconn(c, messages)
 			break
 		}
 	}
@@ -374,6 +386,7 @@ func newRabbusInterpreter(conn *amqp.Connection, ch *amqp.Channel, c Config) *Ra
 		emit:       make(chan Message),
 		emitErr:    make(chan error),
 		emitOk:     make(chan struct{}),
+		reconn:     make(chan struct{}),
 		exDeclared: make(map[string]struct{}),
 	}
 }
