@@ -16,4 +16,4 @@ dependencies:
 
 test:
   override:
-    - cd "$APP_PATH" && make test
+    - cd "$APP_PATH" && make test && make integration-test
