@@ -13,4 +13,6 @@ var (
 	ErrMissingQueue = errors.New("Missing field queue")
 	// ErrMissingHandler is returned when function handler is not passed as parameter.
 	ErrMissingHandler = errors.New("Missing field handler")
+	// ErrUnsupportedArguments is returned when more than the permitted arguments is passed to a function.
+	ErrUnsupportedArguments = errors.New("Unsupported arguments size")
 )
