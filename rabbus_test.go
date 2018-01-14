@@ -2,6 +2,7 @@ package rabbus
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 )
 
 var (
+	mu      sync.RWMutex
 	timeout = time.After(3 * time.Second)
 )
 
@@ -63,8 +65,8 @@ func TestRabbus(t *testing.T) {
 			scenario: "emit async message ensure breaker",
 			function: testEmitAsyncMessageEnsureBreaker,
 		}, {
-			scenario: "notify close",
-			function: testNotifyClose,
+			scenario: "test listen reconn",
+			function: testListenReconn,
 		},
 	}
 
@@ -506,7 +508,7 @@ outer:
 	}
 }
 
-func testNotifyClose(t *testing.T) {
+func testListenReconn(t *testing.T) {
 	amqpWrapper := newAmqpMock()
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
@@ -518,6 +520,19 @@ func testNotifyClose(t *testing.T) {
 			t.Errorf("Expected to close rabbus %s", err)
 		}
 	}(r)
+
+	config := ListenConfig{
+		Exchange: "exchange",
+		Kind:     "direct",
+		Key:      "key",
+		Queue:    "queue",
+	}
+
+	if _, err = r.Listen(config); err != nil {
+		t.Errorf("Expected to create listener, got %s", err)
+	}
+
+	r.reconn <- struct{}{}
 }
 
 type amqpMock struct {
@@ -570,7 +585,7 @@ func (m *amqpMock) NotifyClose(c chan *amqp.Error) chan *amqp.Error { return nil
 func (m *amqpMock) Close() error                                    { return nil }
 
 type amqpErrMock struct {
-	skipWithQos, skipWithExchange bool
+	skipWithQos, skipWithExchange, closed bool
 }
 
 func (m *amqpErrMock) Publish(exchange, key string, opts amqp.Publishing) error {
@@ -599,4 +614,7 @@ func (m *amqpErrMock) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
 	return make(chan *amqp.Error)
 }
 
-func (m *amqpErrMock) Close() error { return nil }
+func (m *amqpErrMock) Close() error {
+	m.closed = true
+	return nil
+}
