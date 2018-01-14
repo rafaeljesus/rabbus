@@ -223,7 +223,9 @@ func (ri *RabbusInterpreter) Listen(c ListenConfig) (chan ConsumerMessage, error
 		return nil, err
 	}
 
+	ri.mu.Lock()
 	ri.exDeclared[c.Exchange] = struct{}{}
+	ri.mu.Unlock()
 
 	messages := make(chan ConsumerMessage, 256)
 	go ri.wrapMessage(c, msgs, messages)
