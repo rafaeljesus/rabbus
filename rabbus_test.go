@@ -44,7 +44,7 @@ func TestRabbus(t *testing.T) {
 			function: testCreateNewRabbusListener,
 		},
 		{
-			scenario: " fail to create new rabbus listener when create consumer returns error",
+			scenario: "fail to create new rabbus listener when create consumer returns error",
 			function: testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError,
 		},
 		{
@@ -62,6 +62,9 @@ func TestRabbus(t *testing.T) {
 		{
 			scenario: "emit async message ensure breaker",
 			function: testEmitAsyncMessageEnsureBreaker,
+		}, {
+			scenario: "notify close",
+			function: testNotifyClose,
 		},
 	}
 
@@ -156,7 +159,7 @@ func testValidateRabbusListener(t *testing.T) {
 	amqpWrapper := newAmqpMock()
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to not create new rabbus")
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -196,7 +199,7 @@ func testCreateNewRabbusListener(t *testing.T) {
 	c := Config{Durable: true}
 	r, err := NewRabbus(c, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to not create new rabbus")
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -257,7 +260,7 @@ func testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError(t *testing.
 	amqpWrapper := &amqpErrMock{skipWithQos: true}
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to create new rabbus, got %s", err.Error())
+		t.Errorf("Expected to create new rabbus, got %s", err.Error())
 	}
 
 	config := ListenConfig{
@@ -284,7 +287,7 @@ func testEmitAsyncMessage(t *testing.T) {
 	c := Config{Durable: true}
 	r, err := NewRabbus(c, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to not create new rabbus")
+		t.Error("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -501,6 +504,20 @@ outer:
 			break outer
 		}
 	}
+}
+
+func testNotifyClose(t *testing.T) {
+	amqpWrapper := newAmqpMock()
+	r, err := NewRabbus(Config{}, amqpWrapper)
+	if err != nil {
+		t.Error("Expected to create new rabbus, got %s", err)
+	}
+
+	defer func(r Rabbus) {
+		if err := r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
 }
 
 type amqpMock struct {

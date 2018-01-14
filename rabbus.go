@@ -299,7 +299,6 @@ func (ri *RabbusInterpreter) listenClose() {
 
 			aw, err := amqpwrap.New(ri.config.Dsn, ri.config.PassiveExchange)
 			if err != nil {
-				// try again later
 				continue
 			}
 
