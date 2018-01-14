@@ -1,14 +1,11 @@
 package rabbus
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/streadway/amqp"
-)
-
-const (
-	RABBUS_DSN = "amqp://localhost:5672"
 )
 
 var (
@@ -31,6 +28,14 @@ func TestRabbus(t *testing.T) {
 			function: testCreateNewRabbusSpecifyingAmqpProvider,
 		},
 		{
+			scenario: "fail to create new rabbus when amqp provider not specified",
+			function: testFailToCreateNewRabbusWhenAmqpProviderNotSpecified,
+		},
+		{
+			scenario: "fail to create new rabbus when withQos returns error",
+			function: testFailToCreateNewRabbusWhenWithQosReturnsError,
+		},
+		{
 			scenario: "validate rabbus listener",
 			function: testValidateRabbusListener,
 		},
@@ -39,8 +44,16 @@ func TestRabbus(t *testing.T) {
 			function: testCreateNewRabbusListener,
 		},
 		{
+			scenario: " fail to create new rabbus listener when create consumer returns error",
+			function: testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError,
+		},
+		{
 			scenario: "emit async message",
 			function: testEmitAsyncMessage,
+		},
+		{
+			scenario: "emit async message returns error",
+			function: testEmitAsyncMessageReturnsError,
 		},
 	}
 
@@ -108,6 +121,26 @@ func testCreateNewRabbusSpecifyingAmqpProvider(t *testing.T) {
 
 	if qosGlobal != config.Qos.Global {
 		t.Errorf("Expected to have called withQos global with %v, got %v", config.Qos.Global, qosGlobal)
+	}
+}
+
+func testFailToCreateNewRabbusWhenAmqpProviderNotSpecified(t *testing.T) {
+	r, _ := NewRabbus(Config{})
+	if r != nil {
+		t.Errorf("Expected to not create new rabbus")
+	}
+}
+
+func testFailToCreateNewRabbusWhenWithQosReturnsError(t *testing.T) {
+	amqpWrapper := &amqpErrMock{}
+	r, err := NewRabbus(Config{}, amqpWrapper)
+	if r != nil {
+		t.Errorf("Expected to not create new rabbus")
+	}
+
+	expectedError := "fail to define qos"
+	if err.Error() != expectedError {
+		t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
 	}
 }
 
@@ -212,6 +245,32 @@ func testCreateNewRabbusListener(t *testing.T) {
 	}
 }
 
+func testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError(t *testing.T) {
+	amqpWrapper := &amqpErrMock{skipWithQos: true}
+	r, err := NewRabbus(Config{}, amqpWrapper)
+	if err != nil {
+		t.Error("Expected to create new rabbus, got %s", err.Error())
+	}
+
+	config := ListenConfig{
+		Exchange: "exchange",
+		Kind:     "direct",
+		Key:      "key",
+		Queue:    "queue",
+	}
+
+	messages, err := r.Listen(config)
+	if messages != nil {
+		close(messages)
+		t.Error("Expected to not create new listener")
+	}
+
+	expectedError := "fail to create consumer"
+	if err.Error() != expectedError {
+		t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
+	}
+}
+
 func testEmitAsyncMessage(t *testing.T) {
 	amqpWrapper := newAmqpMock()
 	c := Config{Durable: true}
@@ -303,6 +362,44 @@ outer:
 	}
 }
 
+func testEmitAsyncMessageReturnsError(t *testing.T) {
+	amqpWrapper := &amqpErrMock{skipWithQos: true, skipWithExchange: true}
+	r, err := NewRabbus(Config{}, amqpWrapper)
+	if err != nil {
+		t.Error("Expected to create new rabbus, got %s", err.Error())
+	}
+
+	defer func(r Rabbus) {
+		if err := r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
+
+	msg := Message{
+		Exchange: "exchange",
+		Kind:     "direct",
+		Key:      "key",
+		Payload:  []byte(`foo`),
+	}
+
+	r.EmitAsync() <- msg
+
+outer:
+	for {
+		select {
+		case err := <-r.EmitErr():
+			expectedError := "fail to publish"
+			if err.Error() != expectedError {
+				t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
+			}
+			break outer
+		case <-timeout:
+			t.Errorf("Got timeout error during emit async")
+			break outer
+		}
+	}
+}
+
 type amqpMock struct {
 	publishCaller        map[string]interface{}
 	createConsumerCaller map[string]interface{}
@@ -351,3 +448,35 @@ func (m *amqpMock) WithQos(count, size int, global bool) error {
 
 func (m *amqpMock) NotifyClose(c chan *amqp.Error) chan *amqp.Error { return nil }
 func (m *amqpMock) Close() error                                    { return nil }
+
+type amqpErrMock struct {
+	skipWithQos, skipWithExchange bool
+}
+
+func (m *amqpErrMock) Publish(exchange, key string, opts amqp.Publishing) error {
+	return errors.New("fail to publish")
+}
+
+func (m *amqpErrMock) CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
+	return nil, errors.New("fail to create consumer")
+}
+
+func (m *amqpErrMock) WithExchange(exchange, kind string, durable bool) error {
+	if m.skipWithExchange {
+		return nil
+	}
+	return errors.New("fail to declare exchange")
+}
+
+func (m *amqpErrMock) WithQos(count, size int, global bool) error {
+	if m.skipWithQos {
+		return nil
+	}
+	return errors.New("fail to define qos")
+}
+
+func (m *amqpErrMock) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
+	return make(chan *amqp.Error)
+}
+
+func (m *amqpErrMock) Close() error { return nil }
