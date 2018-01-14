@@ -52,8 +52,16 @@ func TestRabbus(t *testing.T) {
 			function: testEmitAsyncMessage,
 		},
 		{
-			scenario: "emit async message returns error",
-			function: testEmitAsyncMessageReturnsError,
+			scenario: "emit async message fail to declare exchange",
+			function: testEmitAsyncMessageFailToDeclareExchange,
+		},
+		{
+			scenario: "emit async message fail to publish",
+			function: testEmitAsyncMessageFailToPublish,
+		},
+		{
+			scenario: "emit async message ensure breaker",
+			function: testEmitAsyncMessageEnsureBreaker,
 		},
 	}
 
@@ -362,7 +370,45 @@ outer:
 	}
 }
 
-func testEmitAsyncMessageReturnsError(t *testing.T) {
+func testEmitAsyncMessageFailToDeclareExchange(t *testing.T) {
+	amqpWrapper := &amqpErrMock{skipWithQos: true}
+	r, err := NewRabbus(Config{}, amqpWrapper)
+	if err != nil {
+		t.Error("Expected to create new rabbus, got %s", err.Error())
+	}
+
+	defer func(r Rabbus) {
+		if err := r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
+
+	msg := Message{
+		Exchange: "exchange",
+		Kind:     "direct",
+		Key:      "key",
+		Payload:  []byte(`foo`),
+	}
+
+	r.EmitAsync() <- msg
+
+outer:
+	for {
+		select {
+		case err := <-r.EmitErr():
+			expectedError := "fail to declare exchange"
+			if err.Error() != expectedError {
+				t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
+			}
+			break outer
+		case <-timeout:
+			t.Errorf("Got timeout error during emit async")
+			break outer
+		}
+	}
+}
+
+func testEmitAsyncMessageFailToPublish(t *testing.T) {
 	amqpWrapper := &amqpErrMock{skipWithQos: true, skipWithExchange: true}
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
@@ -393,6 +439,63 @@ outer:
 				t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
 			}
 			break outer
+		case <-timeout:
+			t.Errorf("Got timeout error during emit async")
+			break outer
+		}
+	}
+}
+
+func testEmitAsyncMessageEnsureBreaker(t *testing.T) {
+	var breakerCalled bool
+
+	amqpWrapper := &amqpErrMock{skipWithQos: true, skipWithExchange: true}
+	c := Config{
+		Breaker: Breaker{
+			Threshold: 1,
+			OnStateChange: func(name, from, to string) {
+				breakerCalled = true
+			},
+		},
+	}
+	r, err := NewRabbus(c, amqpWrapper)
+	if err != nil {
+		t.Error("Expected to create new rabbus, got %s", err.Error())
+	}
+
+	defer func(r Rabbus) {
+		if err := r.Close(); err != nil {
+			t.Errorf("Expected to close rabbus %s", err)
+		}
+	}(r)
+
+	msg := Message{
+		Exchange: "exchange",
+		Kind:     "direct",
+		Key:      "key",
+		Payload:  []byte(`foo`),
+	}
+
+	r.EmitAsync() <- msg
+
+	count := 0
+
+outer:
+	for {
+		select {
+		case err := <-r.EmitErr():
+			count++
+			expectedError := "fail to publish"
+			if err.Error() != expectedError {
+				t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
+			}
+			if count == 2 {
+				if !breakerCalled {
+					t.Error("Expected to have called circuit breaker")
+				}
+				break outer
+			}
+			r.EmitAsync() <- msg
 		case <-timeout:
 			t.Errorf("Got timeout error during emit async")
 			break outer
