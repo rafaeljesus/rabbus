@@ -280,7 +280,7 @@ func testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError(t *testing.
 
 	expectedError := "fail to create consumer"
 	if err.Error() != expectedError {
-		t.Errorf("Expected to have error %s, got %s", expectedError, err.Error())
+		t.Errorf("Expected to have error %s, got %s", expectedError, err)
 	}
 }
 
@@ -289,7 +289,7 @@ func testEmitAsyncMessage(t *testing.T) {
 	c := Config{Durable: true}
 	r, err := NewRabbus(c, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to create new rabbus, got %s", err)
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -311,59 +311,7 @@ outer:
 	for {
 		select {
 		case <-r.EmitOk():
-			exchange, ok := amqpWrapper.withExchangeCaller["exchange"]
-			if !ok {
-				t.Error("Expected to have called withExchange with exchange value")
-			}
-
-			if exchange != msg.Exchange {
-				t.Errorf("Expected to have called withExchange exchange with %v, got %v", msg.Exchange, exchange)
-			}
-
-			kind, ok := amqpWrapper.withExchangeCaller["kind"]
-			if !ok {
-				t.Error("Expected to have called withExchange with kind value")
-			}
-
-			if kind != msg.Kind {
-				t.Errorf("Expected to have called withExchange kind with %v, got %v", msg.Kind, kind)
-			}
-
-			durable, ok := amqpWrapper.withExchangeCaller["durable"]
-			if !ok {
-				t.Error("Expected to have called withExchange with durable value")
-			}
-
-			if durable != c.Durable {
-				t.Errorf("Expected to have called withExchange durable with %v, got %v", c.Durable, durable)
-			}
-
-			exchange, ok = amqpWrapper.publishCaller["exchange"]
-			if !ok {
-				t.Error("Expected to have called publish with exchange value")
-			}
-
-			key, ok := amqpWrapper.publishCaller["key"]
-			if !ok {
-				t.Error("Expected to have called publish with key value")
-			}
-
-			if key != msg.Key {
-				t.Errorf("Expected to have called publish key with %v, got %v", msg.Key, key)
-			}
-
-			opts, ok := amqpWrapper.publishCaller["opts"]
-			if !ok {
-				t.Error("Expected to have called publish with opts value")
-			}
-
-			o := opts.(amqp.Publishing)
-			payload := string(o.Body)
-			expectedPayload := string(msg.Payload)
-			if payload != expectedPayload {
-				t.Errorf("Expected to have called publish payload with %v, got %v", expectedPayload, payload)
-			}
-
+			assertCaller(t, amqpWrapper, c, msg)
 			break outer
 		case <-r.EmitErr():
 			t.Errorf("Expected to emit message")
@@ -375,11 +323,70 @@ outer:
 	}
 }
 
+func assertCaller(t *testing.T, amqpWrapper *amqpMock, c Config, msg Message) {
+	exchange, ok := amqpWrapper.withExchangeCaller["exchange"]
+	if !ok {
+		t.Error("Expected to have called withExchange with exchange value")
+	}
+
+	if exchange != msg.Exchange {
+		t.Errorf("Expected to have called withExchange exchange with %v, got %v", msg.Exchange, exchange)
+	}
+
+	kind, ok := amqpWrapper.withExchangeCaller["kind"]
+	if !ok {
+		t.Error("Expected to have called withExchange with kind value")
+	}
+
+	if kind != msg.Kind {
+		t.Errorf("Expected to have called withExchange kind with %v, got %v", msg.Kind, kind)
+	}
+
+	durable, ok := amqpWrapper.withExchangeCaller["durable"]
+	if !ok {
+		t.Error("Expected to have called withExchange with durable value")
+	}
+
+	if durable != c.Durable {
+		t.Errorf("Expected to have called withExchange durable with %v, got %v", c.Durable, durable)
+	}
+
+	exchange, ok = amqpWrapper.publishCaller["exchange"]
+	if !ok {
+		t.Error("Expected to have called publish with exchange value")
+	}
+
+	if exchange != msg.Exchange {
+		t.Errorf("Expected to have called publish exchange with %v, got %v", msg.Exchange, exchange)
+	}
+
+	key, ok := amqpWrapper.publishCaller["key"]
+	if !ok {
+		t.Error("Expected to have called publish with key value")
+	}
+
+	if key != msg.Key {
+		t.Errorf("Expected to have called publish key with %v, got %v", msg.Key, key)
+	}
+
+	opts, ok := amqpWrapper.publishCaller["opts"]
+	if !ok {
+		t.Error("Expected to have called publish with opts value")
+	}
+
+	o := opts.(amqp.Publishing)
+	payload := string(o.Body)
+	expectedPayload := string(msg.Payload)
+	if payload != expectedPayload {
+		t.Errorf("Expected to have called publish payload with %v, got %v", expectedPayload, payload)
+	}
+}
+
 func testEmitAsyncMessageFailToDeclareExchange(t *testing.T) {
 	amqpWrapper := &amqpErrMock{skipWithQos: true}
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to create new rabbus, got %s", err.Error())
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -417,7 +424,7 @@ func testEmitAsyncMessageFailToPublish(t *testing.T) {
 	amqpWrapper := &amqpErrMock{skipWithQos: true, skipWithExchange: true}
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to create new rabbus, got %s", err.Error())
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -465,7 +472,7 @@ func testEmitAsyncMessageEnsureBreaker(t *testing.T) {
 	}
 	r, err := NewRabbus(c, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to create new rabbus, got %s", err.Error())
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
@@ -512,7 +519,7 @@ func testListenReconn(t *testing.T) {
 	amqpWrapper := newAmqpMock()
 	r, err := NewRabbus(Config{}, amqpWrapper)
 	if err != nil {
-		t.Error("Expected to create new rabbus, got %s", err)
+		t.Errorf("Expected to create new rabbus, got %s", err)
 	}
 
 	defer func(r Rabbus) {
