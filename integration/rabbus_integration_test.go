@@ -70,7 +70,7 @@ func testRabbusPublishSubscribe(t *testing.T) {
 		t.Fatalf("expected to init rabbus %s", err)
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err = r.Close(); err != nil {
 			t.Errorf("expected to close rabbus %s", err)
 		}
@@ -138,7 +138,7 @@ func benchmarkEmitAsync(b *testing.B) {
 		b.Fatalf("expected to init rabbus %s", err)
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err := r.Close(); err != nil {
 			b.Fatalf("expected to close rabbus %s", err)
 		}
@@ -147,7 +147,7 @@ func benchmarkEmitAsync(b *testing.B) {
 	var wg sync.WaitGroup
 	wg.Add(b.N)
 
-	go func(r rabbus.Rabbus) {
+	go func(r *rabbus.Rabbus) {
 		for {
 			select {
 			case _, ok := <-r.EmitOk():
