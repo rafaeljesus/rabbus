@@ -4,38 +4,22 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// Amqp expose a interface for interacting with amqp broker
-type Amqp interface {
-	// Publish wraps amqp.Publish method
-	Publish(exchange, key string, opts amqp.Publishing) error
-	// CreateConsumer creates a amqp consumer
-	CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error)
-	// WithExchange creates a amqp exchange
-	WithExchange(exchange, kind string, durable bool) error
-	// WithQos wrapper over amqp.Qos method
-	WithQos(count, size int, global bool) error
-	// NotifyClose wrapper over notifyClose method
-	NotifyClose(c chan *amqp.Error) chan *amqp.Error
-	// Close closes the running amqp connection and channel
-	Close() error
-}
-
-// AmqpInterpreter interpret (implement) Amqp interface definition
-type AmqpInterpreter struct {
+// Amqp interpret (implement) Amqp interface definition
+type Amqp struct {
 	conn            *amqp.Connection
 	ch              *amqp.Channel
 	passiveExchange bool
 }
 
-// New returns a new AmqpInterpreter configured, or returning an non-nil err
+// New returns a new Amqp configured, or returning an non-nil err
 // if an error occurred while creating connection or channel.
-func New(dsn string, pex bool) (*AmqpInterpreter, error) {
+func New(dsn string, pex bool) (*Amqp, error) {
 	conn, ch, err := createConnAndChan(dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &AmqpInterpreter{
+	return &Amqp{
 		conn:            conn,
 		ch:              ch,
 		passiveExchange: pex,
@@ -43,12 +27,12 @@ func New(dsn string, pex bool) (*AmqpInterpreter, error) {
 }
 
 // Publish wraps amqp.Publish method
-func (ai *AmqpInterpreter) Publish(exchange, key string, opts amqp.Publishing) error {
+func (ai *Amqp) Publish(exchange, key string, opts amqp.Publishing) error {
 	return ai.ch.Publish(exchange, key, false, false, opts)
 }
 
 // CreateConsumer creates a amqp consumer
-func (ai *AmqpInterpreter) CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
+func (ai *Amqp) CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
 	if err := ai.WithExchange(exchange, kind, durable); err != nil {
 		return nil, err
 	}
@@ -66,7 +50,7 @@ func (ai *AmqpInterpreter) CreateConsumer(exchange, key, kind, queue string, dur
 }
 
 // WithExchange creates a amqp exchange
-func (ai *AmqpInterpreter) WithExchange(exchange, kind string, durable bool) error {
+func (ai *Amqp) WithExchange(exchange, kind string, durable bool) error {
 	if ai.passiveExchange {
 		return ai.ch.ExchangeDeclarePassive(exchange, kind, durable, false, false, false, nil)
 	}
@@ -75,17 +59,17 @@ func (ai *AmqpInterpreter) WithExchange(exchange, kind string, durable bool) err
 }
 
 // WithQos wrapper over amqp.Qos method
-func (ai *AmqpInterpreter) WithQos(count, size int, global bool) error {
+func (ai *Amqp) WithQos(count, size int, global bool) error {
 	return ai.ch.Qos(count, size, global)
 }
 
 // NotifyClose wrapper over notifyClose method
-func (ai *AmqpInterpreter) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
+func (ai *Amqp) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
 	return ai.conn.NotifyClose(c)
 }
 
 // Close closes the running amqp connection and channel
-func (ai *AmqpInterpreter) Close() error {
+func (ai *Amqp) Close() error {
 	if err := ai.ch.Close(); err != nil {
 		return err
 	}

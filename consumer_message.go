@@ -6,41 +6,43 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// ConsumerMessage captures the fields for a previously delivered message resident in a queue
-// to be delivered by the server to a consumer.
-type ConsumerMessage struct {
-	delivery        amqp.Delivery
-	ContentType     string
-	ContentEncoding string
-	// DeliveryMode queue implementation use, non-persistent (1) or persistent (2)
-	DeliveryMode uint8
-	// Priority queue implementation use, 0 to 9
-	Priority uint8
-	// CorrelationId application use, correlation identifier
-	CorrelationId string
-	// ReplyTo application use, address to to reply to (ex: RPC)
-	ReplyTo string
-	// Expiration implementation use, message expiration spec
-	Expiration string
-	// MessageId application use, message identifier
-	MessageId string
-	// Timestamp application use, message timestamp
-	Timestamp time.Time
-	// Type application use, message type name
-	Type string
-	// ConsumerTag valid only with Channel.Consume
-	ConsumerTag string
-	// MessageCount valid only with Channel.Get
-	MessageCount uint32
-	DeliveryTag  uint64
-	Redelivered  bool
-	Exchange     string
-	// Headers application or header exchange table
-	Headers map[string]interface{}
-	// Key basic.publish routing key
-	Key  string
-	Body []byte
-}
+type (
+	// ConsumerMessage captures the fields for a previously delivered message resident in a queue
+	// to be delivered by the server to a consumer.
+	ConsumerMessage struct {
+		delivery        amqp.Delivery
+		ContentType     string
+		ContentEncoding string
+		// DeliveryMode queue implementation use, non-persistent (1) or persistent (2)
+		DeliveryMode uint8
+		// Priority queue implementation use, 0 to 9
+		Priority uint8
+		// CorrelationId application use, correlation identifier
+		CorrelationId string
+		// ReplyTo application use, address to to reply to (ex: RPC)
+		ReplyTo string
+		// Expiration implementation use, message expiration spec
+		Expiration string
+		// MessageId application use, message identifier
+		MessageId string
+		// Timestamp application use, message timestamp
+		Timestamp time.Time
+		// Type application use, message type name
+		Type string
+		// ConsumerTag valid only with Channel.Consume
+		ConsumerTag string
+		// MessageCount valid only with Channel.Get
+		MessageCount uint32
+		DeliveryTag  uint64
+		Redelivered  bool
+		Exchange     string
+		// Headers application or header exchange table
+		Headers map[string]interface{}
+		// Key basic.publish routing key
+		Key  string
+		Body []byte
+	}
+)
 
 func newConsumerMessage(m amqp.Delivery) ConsumerMessage {
 	return ConsumerMessage{

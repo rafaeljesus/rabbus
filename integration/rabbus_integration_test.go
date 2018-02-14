@@ -25,8 +25,8 @@ func TestRabbus(t *testing.T) {
 		function func(*testing.T)
 	}{
 		{
-			scenario: "rabbus publish subscribe",
-			function: testRabbusPublishSubscribe,
+			"rabbus publish subscribe",
+			testRabbusPublishSubscribe,
 		},
 	}
 
@@ -67,12 +67,12 @@ func testRabbusPublishSubscribe(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Errorf("Expected to init rabbus %s", err)
+		t.Fatalf("expected to init rabbus %s", err)
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err = r.Close(); err != nil {
-			t.Errorf("Expected to close rabbus %s", err)
+			t.Errorf("expected to close rabbus %s", err)
 		}
 	}(r)
 
@@ -83,7 +83,7 @@ func testRabbusPublishSubscribe(t *testing.T) {
 		Queue:    "test_q",
 	})
 	if err != nil {
-		t.Errorf("Expected to listen message %s", err)
+		t.Fatalf("expected to listen message %s", err)
 	}
 
 	var wg sync.WaitGroup
@@ -114,10 +114,10 @@ outer:
 			wg.Wait()
 			break outer
 		case <-r.EmitErr():
-			t.Errorf("Expected to emit message")
+			t.Fatalf("expected to emit message")
 			break outer
 		case <-timeout:
-			t.Errorf("parallel.Run() failed, got timeout error")
+			t.Fatalf("parallel.Run() failed, got timeout error")
 			break outer
 		}
 	}
@@ -135,19 +135,19 @@ func benchmarkEmitAsync(b *testing.B) {
 		},
 	})
 	if err != nil {
-		b.Errorf("Expected to init rabbus %s", err)
+		b.Fatalf("expected to init rabbus %s", err)
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err := r.Close(); err != nil {
-			b.Errorf("Expected to close rabbus %s", err)
+			b.Fatalf("expected to close rabbus %s", err)
 		}
 	}(r)
 
 	var wg sync.WaitGroup
 	wg.Add(b.N)
 
-	go func(r rabbus.Rabbus) {
+	go func(r *rabbus.Rabbus) {
 		for {
 			select {
 			case _, ok := <-r.EmitOk():
@@ -156,7 +156,7 @@ func benchmarkEmitAsync(b *testing.B) {
 				}
 			case _, ok := <-r.EmitErr():
 				if ok {
-					b.Fatalf("Expected to emit message, receive error: %v", err)
+					b.Fatalf("expected to emit message, receive error: %v", err)
 				}
 			}
 		}

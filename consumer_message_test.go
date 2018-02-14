@@ -14,16 +14,16 @@ func TestConsumerMessage(t *testing.T) {
 		function func(*testing.T)
 	}{
 		{
-			scenario: "ack message",
-			function: testAckMessage,
+			"ack message",
+			testAckMessage,
 		},
 		{
-			scenario: "nack message",
-			function: testNackMessage,
+			"nack message",
+			testNackMessage,
 		},
 		{
-			scenario: "reject message",
-			function: testRejectMessage,
+			"reject message",
+			testRejectMessage,
 		},
 	}
 
@@ -35,53 +35,53 @@ func TestConsumerMessage(t *testing.T) {
 }
 
 func testAckMessage(t *testing.T) {
-	ack := &acknowledgerMock{}
+	ack := &acknowledger{}
 	d := amqp.Delivery{Acknowledger: ack}
 	cm := newConsumerMessage(d)
 	cm.Ack(false)
 
-	if !ack.acked {
-		t.Error("Expected to have called ack")
+	if !ack.ackInvoked {
+		t.Fatal("expected acknowledger.Ack to be invoked")
 	}
 }
 
 func testNackMessage(t *testing.T) {
-	ack := &acknowledgerMock{}
+	ack := &acknowledger{}
 	d := amqp.Delivery{Acknowledger: ack}
 	cm := newConsumerMessage(d)
 	cm.Nack(false, false)
 
-	if !ack.nacked {
-		t.Error("Expected to have called nack")
+	if !ack.nackInvoked {
+		t.Fatal("expected acknowledger.Nack to be invoked")
 	}
 }
 
 func testRejectMessage(t *testing.T) {
-	ack := &acknowledgerMock{}
+	ack := &acknowledger{}
 	d := amqp.Delivery{Acknowledger: ack}
 	cm := newConsumerMessage(d)
 	cm.Reject(false)
 
-	if !ack.rejected {
-		t.Error("Expected to have called reject")
+	if !ack.rejectInvoked {
+		t.Fatal("expected acknowledger.Reject to be invoked")
 	}
 }
 
-type acknowledgerMock struct {
-	acked, nacked, rejected bool
+type acknowledger struct {
+	ackInvoked, nackInvoked, rejectInvoked bool
 }
 
-func (a *acknowledgerMock) Ack(tag uint64, multiple bool) error {
-	a.acked = true
+func (a *acknowledger) Ack(tag uint64, multiple bool) error {
+	a.ackInvoked = true
 	return nil
 }
 
-func (a *acknowledgerMock) Nack(tag uint64, multiple bool, requeue bool) error {
-	a.nacked = true
+func (a *acknowledger) Nack(tag uint64, multiple bool, requeue bool) error {
+	a.nackInvoked = true
 	return nil
 }
 
-func (a *acknowledgerMock) Reject(tag uint64, requeue bool) error {
-	a.rejected = true
+func (a *acknowledger) Reject(tag uint64, requeue bool) error {
+	a.rejectInvoked = true
 	return nil
 }
