@@ -22,20 +22,15 @@ import (
 
 func main() {
 	timeout := time.After(time.Second * 3)
-	config := rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: true,
-		Retry: rabbus.Retry{
-			Attempts: 5,
-			Sleep:    time.Second * 2,
-		},
-		Breaker: rabbus.Breaker{
-			Threshold: 3,
-			OnStateChange: func(name, from, to string) {
-				// do something when state is changed
-			},
-		},
-	}
+  cbStateChangeFunc := func(name, from, to string) { }
+	r, err := rabbus.New(
+		RABBUS_DSN,
+		rabbus.Durable(true),
+		rabbus.Attempts(5),
+		rabbus.Sleep(time.Second*2),
+		rabbus.Threshold(3),
+    rabbus.OnStateChange(cbStateChangeFunc),
+	)
 	if err != nil {
 		// handle error
 	}
@@ -78,22 +73,15 @@ import (
 
 func main() {
 	timeout := time.After(time.Second * 3)
-	config := rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: true,
-		Retry: rabbus.Retry{
-			Attempts: 5,
-			Sleep:    time.Second * 2,
-		},
-		Breaker: rabbus.Breaker{
-			Threshold: 3,
-			OnStateChange: func(name, from, to string) {
-				// do something when state is changed
-			},
-		},
-	}
-
-	r, err := rabbus.NewRabbus(config)
+  cbStateChangeFunc := func(name, from, to string) { }
+	r, err := rabbus.New(
+		RABBUS_DSN,
+		rabbus.Durable(true),
+		rabbus.Attempts(5),
+		rabbus.Sleep(time.Second*2),
+		rabbus.Threshold(3),
+    rabbus.OnStateChange(cbStateChangeFunc),
+	)
 	if err != nil {
 		// handle error
 	}

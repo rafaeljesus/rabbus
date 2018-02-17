@@ -9,28 +9,23 @@ import (
 )
 
 var (
-	RABBUS_DSN = "amqp://localhost:5672"
-	timeout    = time.After(time.Second * 3)
-	wg         sync.WaitGroup
+	rabbusDsn = "amqp://localhost:5672"
+	timeout   = time.After(time.Second * 3)
+	wg        sync.WaitGroup
 )
 
 func main() {
-	config := rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: true,
-		Retry: rabbus.Retry{
-			Attempts: 5,
-			Sleep:    time.Second * 2,
-		},
-		Breaker: rabbus.Breaker{
-			Threshold: 3,
-			OnStateChange: func(name, from, to string) {
-				// do something when state is changed
-			},
-		},
+	cbStateChangeFunc := func(name, from, to string) {
+		// do something when state is changed
 	}
-
-	r, err := rabbus.NewRabbus(config)
+	r, err := rabbus.New(
+		rabbusDsn,
+		rabbus.Durable(true),
+		rabbus.Attempts(5),
+		rabbus.Sleep(time.Second*2),
+		rabbus.Threshold(3),
+		rabbus.OnStateChange(cbStateChangeFunc),
+	)
 	if err != nil {
 		log.Fatalf("Failed to init rabbus connection %s", err)
 		return
