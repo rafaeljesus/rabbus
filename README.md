@@ -17,25 +17,24 @@ The rabbus package exposes an interface for emitting and listening RabbitMQ mess
 ### Emit
 ```go
 import (
+	"time"
+
 	"github.com/rafaeljesus/rabbus"
 )
 
 func main() {
 	timeout := time.After(time.Second * 3)
-	config := rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: true,
-		Retry: rabbus.Retry{
-			Attempts: 5,
-			Sleep:    time.Second * 2,
-		},
-		Breaker: rabbus.Breaker{
-			Threshold: 3,
-			OnStateChange: func(name, from, to string) {
-				// do something when state is changed
-			},
-		},
+	cbStateChangeFunc := func(name, from, to string) {
+		// do something when state is changed
 	}
+	r, err := rabbus.New(
+		rabbusDsn,
+		rabbus.Durable(true),
+		rabbus.Attempts(5),
+		rabbus.Sleep(time.Second*2),
+		rabbus.Threshold(3),
+		rabbus.OnStateChange(cbStateChangeFunc),
+	)
 	if err != nil {
 		// handle error
 	}
@@ -72,28 +71,24 @@ func main() {
 ```go
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/rafaeljesus/rabbus"
 )
 
 func main() {
 	timeout := time.After(time.Second * 3)
-	config := rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: true,
-		Retry: rabbus.Retry{
-			Attempts: 5,
-			Sleep:    time.Second * 2,
-		},
-		Breaker: rabbus.Breaker{
-			Threshold: 3,
-			OnStateChange: func(name, from, to string) {
-				// do something when state is changed
-			},
-		},
+	cbStateChangeFunc := func(name, from, to string) {
+		// do something when state is changed
 	}
-
-	r, err := rabbus.NewRabbus(config)
+	r, err := rabbus.New(
+		rabbusDsn,
+		rabbus.Durable(true),
+		rabbus.Attempts(5),
+		rabbus.Sleep(time.Second*2),
+		rabbus.Threshold(3),
+		rabbus.OnStateChange(cbStateChangeFunc),
+	)
 	if err != nil {
 		// handle error
 	}
