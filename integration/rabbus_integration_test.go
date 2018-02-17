@@ -56,16 +56,12 @@ func BenchmarkRabbus(b *testing.B) {
 }
 
 func testRabbusPublishSubscribe(t *testing.T) {
-	r, err := rabbus.NewRabbus(rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: true,
-		Retry: rabbus.Retry{
-			Attempts: 1,
-		},
-		Breaker: rabbus.Breaker{
-			Timeout: time.Second * 2,
-		},
-	})
+	r, err := rabbus.New(
+		RABBUS_DSN,
+		rabbus.Durable(true),
+		rabbus.Attempts(5),
+		rabbus.BreakerTimeout(time.Second*2),
+	)
 	if err != nil {
 		t.Fatalf("expected to init rabbus %s", err)
 	}
@@ -124,16 +120,11 @@ outer:
 }
 
 func benchmarkEmitAsync(b *testing.B) {
-	r, err := rabbus.NewRabbus(rabbus.Config{
-		Dsn:     RABBUS_DSN,
-		Durable: false,
-		Retry: rabbus.Retry{
-			Attempts: 1,
-		},
-		Breaker: rabbus.Breaker{
-			Timeout: time.Second * 2,
-		},
-	})
+	r, err := rabbus.New(
+		RABBUS_DSN,
+		rabbus.Attempts(1),
+		rabbus.BreakerTimeout(time.Second*2),
+	)
 	if err != nil {
 		b.Fatalf("expected to init rabbus %s", err)
 	}

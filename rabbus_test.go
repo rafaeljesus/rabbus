@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	mu        sync.RWMutex
-	timeout   = time.After(3 * time.Second)
-	amqpError = errors.New("amqp error")
+	dsn     = "amqp://path"
+	mu      sync.RWMutex
+	timeout = time.After(3 * time.Second)
+	errAmqp = errors.New("amqp error")
 )
 
 func TestRabbus(t *testing.T) {
@@ -23,16 +24,12 @@ func TestRabbus(t *testing.T) {
 		function func(*testing.T)
 	}{
 		{
-			"validate new rabbus constructor args size",
-			testValidateNewRabbusConstructorArgsSize,
-		},
-		{
 			"create new rabbus specifying amqp provider",
-			testCreateNewRabbusSpecifyingAmqpProvider,
+			testCreateNewSpecifyingAmqpProvider,
 		},
 		{
 			"fail to create new rabbus when withQos returns error",
-			testFailToCreateNewRabbusWhenWithQosReturnsError,
+			testFailToCreateNewWhenWithQosReturnsError,
 		},
 		{
 			"validate rabbus listener",
@@ -40,11 +37,11 @@ func TestRabbus(t *testing.T) {
 		},
 		{
 			"create new rabbus listener",
-			testCreateNewRabbusListener,
+			testCreateNewListener,
 		},
 		{
 			"fail to create new rabbus listener when create consumer returns error",
-			testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError,
+			testFailToCreateNewListenerWhenCreateConsumerReturnsError,
 		},
 		{
 			"emit async message",
@@ -71,45 +68,24 @@ func TestRabbus(t *testing.T) {
 	}
 }
 
-func testValidateNewRabbusConstructorArgsSize(t *testing.T) {
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	r, err := NewRabbus(Config{}, amqpProvider, amqpProvider)
-	if r != nil {
-		t.Fatal("unexpected rabbus value")
-	}
-
-	if err != ErrUnsupportedArguments {
-		t.Fatalf("expected to have ErrUnsupportedArguments, got %s", err)
-	}
-
-	if amqpProvider.withQosInvoked {
-		t.Fatal("unexpected call to withQos func")
-	}
-}
-
-func testCreateNewRabbusSpecifyingAmqpProvider(t *testing.T) {
-	config := Config{
-		Qos: Qos{
-			PrefetchCount: 1,
-			PrefetchSize:  10,
-			Global:        true,
-		},
-	}
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error {
-		if config.Qos.PrefetchCount != count {
-			t.Fatalf("unexpected prefetch count: %t", count)
+func testCreateNewSpecifyingAmqpProvider(t *testing.T) {
+	count := 1
+	size := 10
+	global := true
+	provider := new(amqpMock)
+	provider.withQosFn = func(c, s int, g bool) error {
+		if count != c {
+			t.Fatalf("unexpected prefetch count: %t", c)
 		}
-		if config.Qos.PrefetchSize != size {
-			t.Fatalf("unexpected prefetch size: %t", size)
+		if size != s {
+			t.Fatalf("unexpected prefetch size: %t", s)
 		}
-		if config.Qos.Global != global {
-			t.Fatalf("unexpected global: %t", global)
+		if global != g {
+			t.Fatalf("unexpected global: %t", g)
 		}
 		return nil
 	}
-	r, err := NewRabbus(config, amqpProvider)
+	r, err := New(dsn, PrefetchCount(count), PrefetchSize(size), QosGlobal(global), AmqpProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -120,28 +96,28 @@ func testCreateNewRabbusSpecifyingAmqpProvider(t *testing.T) {
 		}
 	}(r)
 
-	if !amqpProvider.withQosInvoked {
-		t.Fatal("expected amqpProvider.WithQos() to be invoked")
+	if !provider.withQosInvoked {
+		t.Fatal("expected provider.WithQos() to be invoked")
 	}
 }
 
-func testFailToCreateNewRabbusWhenWithQosReturnsError(t *testing.T) {
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return amqpError }
-	r, err := NewRabbus(Config{}, amqpProvider)
+func testFailToCreateNewWhenWithQosReturnsError(t *testing.T) {
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return errAmqp }
+	r, err := New(dsn, AmqpProvider(provider))
 	if r != nil {
 		t.Fatal("unexpected rabbus value")
 	}
 
-	if err != amqpError {
-		t.Fatalf("expected to have error %v, got %v", amqpError, err)
+	if err != errAmqp {
+		t.Fatalf("expected to have error %v, got %v", errAmqp, err)
 	}
 }
 
 func testValidateRabbusListener(t *testing.T) {
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	r, err := NewRabbus(Config{}, amqpProvider)
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	r, err := New(dsn, AmqpProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -178,17 +154,17 @@ func testValidateRabbusListener(t *testing.T) {
 	}
 }
 
-func testCreateNewRabbusListener(t *testing.T) {
-	c := Config{Durable: true}
+func testCreateNewListener(t *testing.T) {
+	durable := true
 	config := ListenConfig{
 		Exchange: "exchange",
 		Kind:     "direct",
 		Key:      "key",
 		Queue:    "queue",
 	}
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	amqpProvider.createConsumerFn = func(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	provider.createConsumerFn = func(exchange, key, kind, queue string, d bool) (<-chan amqp.Delivery, error) {
 		if exchange != config.Exchange {
 			t.Fatalf("unexpected exchange: %s", exchange)
 		}
@@ -201,12 +177,12 @@ func testCreateNewRabbusListener(t *testing.T) {
 		if queue != config.Queue {
 			t.Fatalf("unexpected queue: %s", queue)
 		}
-		if durable != c.Durable {
-			t.Fatalf("unexpected durable: %t", durable)
+		if d != durable {
+			t.Fatalf("unexpected durable: %t", d)
 		}
 		return make(<-chan amqp.Delivery), nil
 	}
-	r, err := NewRabbus(c, amqpProvider)
+	r, err := New(dsn, AmqpProvider(provider), Durable(durable))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -221,18 +197,18 @@ func testCreateNewRabbusListener(t *testing.T) {
 		t.Fatalf("expected to create listener, got %s", err)
 	}
 
-	if !amqpProvider.createConsumerInvoked {
-		t.Fatal("expected amqpProvider.CreateConsumer() to be invoked")
+	if !provider.createConsumerInvoked {
+		t.Fatal("expected provider.CreateConsumer() to be invoked")
 	}
 }
 
-func testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError(t *testing.T) {
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	amqpProvider.createConsumerFn = func(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
-		return nil, amqpError
+func testFailToCreateNewListenerWhenCreateConsumerReturnsError(t *testing.T) {
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	provider.createConsumerFn = func(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
+		return nil, errAmqp
 	}
-	r, err := NewRabbus(Config{}, amqpProvider)
+	r, err := New(dsn, AmqpProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err.Error())
 	}
@@ -243,8 +219,8 @@ func testFailToCreateNewRabbusListenerWhenCreateConsumerReturnsError(t *testing.
 		Key:      "key",
 		Queue:    "queue",
 	})
-	if err != amqpError {
-		t.Fatalf("expected to have error %v, got %v", amqpError, err)
+	if err != errAmqp {
+		t.Fatalf("expected to have error %v, got %v", errAmqp, err)
 	}
 }
 
@@ -255,22 +231,21 @@ func testEmitAsyncMessage(t *testing.T) {
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
-	c := Config{Durable: true}
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	amqpProvider.withExchangeFn = func(exchange, kind string, durable bool) error {
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	provider.withExchangeFn = func(exchange, kind string, durable bool) error {
 		if exchange != msg.Exchange {
 			t.Fatalf("unexpected exchange: %s", exchange)
 		}
 		if kind != msg.Kind {
 			t.Fatalf("unexpected kind: %s", kind)
 		}
-		if durable != c.Durable {
+		if durable {
 			t.Fatalf("unexpected durable: %t", durable)
 		}
 		return nil
 	}
-	amqpProvider.publishFn = func(exchange, key string, opts amqp.Publishing) error {
+	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error {
 		if exchange != msg.Exchange {
 			t.Fatalf("unexpected exchange: %s", exchange)
 		}
@@ -282,7 +257,7 @@ func testEmitAsyncMessage(t *testing.T) {
 		}
 		return nil
 	}
-	r, err := NewRabbus(c, amqpProvider)
+	r, err := New(dsn, AmqpProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -299,8 +274,8 @@ outer:
 	for {
 		select {
 		case <-r.EmitOk():
-			if !amqpProvider.publishInvoked {
-				t.Fatal("expected amqpProvider.Publish() to be invoked")
+			if !provider.publishInvoked {
+				t.Fatal("expected provider.Publish() to be invoked")
 			}
 			break outer
 		case err := <-r.EmitErr():
@@ -320,11 +295,11 @@ func testEmitAsyncMessageFailToDeclareExchange(t *testing.T) {
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	amqpProvider.withExchangeFn = func(exchange, kind string, durable bool) error { return amqpError }
-	amqpProvider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return nil }
-	r, err := NewRabbus(Config{}, amqpProvider)
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	provider.withExchangeFn = func(exchange, kind string, durable bool) error { return errAmqp }
+	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return nil }
+	r, err := New(dsn, AmqpProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -341,11 +316,11 @@ outer:
 	for {
 		select {
 		case err := <-r.EmitErr():
-			if err != amqpError {
-				t.Fatalf("expected to have error %v, got %v", amqpError, err)
+			if err != errAmqp {
+				t.Fatalf("expected to have error %v, got %v", errAmqp, err)
 			}
-			if amqpProvider.publishInvoked {
-				t.Fatal("expected amqpProvider.Publish() to not be invoked")
+			if provider.publishInvoked {
+				t.Fatal("expected provider.Publish() to not be invoked")
 			}
 			break outer
 		case <-timeout:
@@ -362,11 +337,11 @@ func testEmitAsyncMessageFailToPublish(t *testing.T) {
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	amqpProvider.withExchangeFn = func(exchange, kind string, durable bool) error { return nil }
-	amqpProvider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return amqpError }
-	r, err := NewRabbus(Config{}, amqpProvider)
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	provider.withExchangeFn = func(exchange, kind string, durable bool) error { return nil }
+	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return errAmqp }
+	r, err := New(dsn, AmqpProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -383,12 +358,12 @@ outer:
 	for {
 		select {
 		case err := <-r.EmitErr():
-			if err != amqpError {
-				t.Fatalf("expected to have error %v, got %v", amqpError, err)
+			if err != errAmqp {
+				t.Fatalf("expected to have error %v, got %v", errAmqp, err)
 			}
 			break outer
 		case <-timeout:
-			t.Errorf("Got timeout error during emit async")
+			t.Errorf("got timeout error during emit async")
 			break outer
 		}
 	}
@@ -396,25 +371,19 @@ outer:
 
 func testEmitAsyncMessageEnsureBreaker(t *testing.T) {
 	var breakerCalled bool
-	c := Config{
-		Breaker: Breaker{
-			Threshold: 1,
-			OnStateChange: func(name, from, to string) {
-				breakerCalled = true
-			},
-		},
-	}
+	fn := func(name, from, to string) { breakerCalled = true }
+	threshold := uint32(1)
 	msg := Message{
 		Exchange: "exchange",
 		Kind:     "direct",
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
-	amqpProvider := new(amqpMock)
-	amqpProvider.withQosFn = func(count, size int, global bool) error { return nil }
-	amqpProvider.withExchangeFn = func(exchange, kind string, durable bool) error { return nil }
-	amqpProvider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return amqpError }
-	r, err := NewRabbus(c, amqpProvider)
+	provider := new(amqpMock)
+	provider.withQosFn = func(count, size int, global bool) error { return nil }
+	provider.withExchangeFn = func(exchange, kind string, durable bool) error { return nil }
+	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return errAmqp }
+	r, err := New(dsn, AmqpProvider(provider), OnStateChange(fn), Threshold(threshold))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}

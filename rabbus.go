@@ -1,11 +1,12 @@
 package rabbus
 
 import (
+	"errors"
 	"sync"
 	"time"
 
+	retry "github.com/hellofresh/retry-go"
 	amqpwrap "github.com/rafaeljesus/rabbus/internal/amqp"
-	"github.com/rafaeljesus/retry-go"
 	"github.com/sony/gobreaker"
 	"github.com/streadway/amqp"
 )
@@ -24,55 +25,11 @@ const (
 )
 
 type (
-	// Config carries the variables to tune a newly started rabbus.
-	Config struct {
-		// Dsn is the amqp url address.
-		Dsn string
-		// Durable indicates of the queue will survive broker restarts. Default to true.
-		Durable bool
-		// PassiveExchange forces passive connection with all exchanges using
-		// amqp's ExchangeDeclarePassive instead the default ExchangeDeclare
-		PassiveExchange bool
-		// Qos controls how many messages or how many bytes will be consumed before receiving delivery acks
-		Qos
-		// Retry settings for the in memory retry mechanism
-		Retry
-		// Breaker circuit breaker configuration
-		Breaker
-	}
-
-	// Retry config for the in memory retry mechanism
-	Retry struct {
-		// Attempts is the max number of retries on broker outages.
-		Attempts int
-		// Sleep is the sleep time of the retry mechanism.
-		Sleep time.Duration
-
-		reconnectSleep time.Duration
-	}
-
-	// Breaker carries the configuration for circuit breaker
-	Breaker struct {
-		// Interval is the cyclic period of the closed state for CircuitBreaker to clear the internal counts,
-		// If Interval is 0, CircuitBreaker doesn't clear the internal counts during the closed state.
-		Interval time.Duration
-		// Timeout is the period of the open state, after which the state of CircuitBreaker becomes half-open.
-		// If Timeout is 0, the timeout value of CircuitBreaker is set to 60 seconds.
-		Timeout time.Duration
-		// Threshold when a threshold of failures has been reached, future calls to the broker will not run.
-		// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
-		// will start running the function again. Default value is 5.
-		Threshold uint32
-		// OnStateChange is called whenever the state of CircuitBreaker changes.
-		OnStateChange func(name, from, to string)
-	}
-
-	// Qos controls how many messages or how many bytes the server will try to keep on the network for consumers before receiving delivery acks.
-	Qos struct {
-		PrefetchCount int
-		PrefetchSize  int
-		Global        bool
-	}
+	// Option represents an option you can pass to New.
+	// See the documentation for the individual options.
+	Option func(*Rabbus) error
+	// OnStateChangeFunc is the callback function when circuit breaker state changes.
+	OnStateChangeFunc func(name, from, to string)
 
 	// Message carries fields for sending messages.
 	Message struct {
@@ -121,8 +78,8 @@ type (
 		emitErr    chan error
 		emitOk     chan struct{}
 		reconn     chan struct{}
-		config     Config
 		exDeclared map[string]struct{}
+		config
 	}
 
 	// Amqp expose a interface for interacting with amqp broker
@@ -139,6 +96,30 @@ type (
 		NotifyClose(c chan *amqp.Error) chan *amqp.Error
 		// Close closes the running amqp connection and channel
 		Close() error
+	}
+
+	config struct {
+		dsn                string
+		durable, passiveex bool
+		retrycfg
+		breaker
+		qos
+	}
+
+	retrycfg struct {
+		attempts              int
+		sleep, reconnectSleep time.Duration
+	}
+
+	breaker struct {
+		interval, timeout time.Duration
+		threshold         uint32
+		onStateChange     OnStateChangeFunc
+	}
+
+	qos struct {
+		prefetchCount, prefetchSize int
+		global                      bool
 	}
 )
 
@@ -158,107 +139,104 @@ func (lc ListenConfig) validate() error {
 	return nil
 }
 
-// NewRabbus returns a new Rabbus configured with the
+// New returns a new Rabbus configured with the
 // variables from the config parameter, or returning an non-nil err
 // if an error occurred while creating connection and channel.
-func NewRabbus(c Config, amqpProvider ...Amqp) (*Rabbus, error) {
-	if len(amqpProvider) > 1 {
-		return nil, ErrUnsupportedArguments
+func New(dsn string, options ...Option) (*Rabbus, error) {
+	r := &Rabbus{
+		emit:       make(chan Message),
+		emitErr:    make(chan error),
+		emitOk:     make(chan struct{}),
+		reconn:     make(chan struct{}),
+		exDeclared: make(map[string]struct{}),
 	}
 
-	var amqpWrapper Amqp
-	if len(amqpProvider) == 0 {
-		var err error
-		amqpWrapper, err = amqpwrap.New(c.Dsn, c.PassiveExchange)
+	for _, o := range options {
+		if err := o(r); err != nil {
+			return nil, err
+		}
+	}
+
+	if r.amqp == nil {
+		amqpWrapper, err := amqpwrap.New(dsn, r.config.passiveex)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		amqpWrapper = amqpProvider[0]
+		r.amqp = amqpWrapper
 	}
 
-	if err := amqpWrapper.WithQos(c.Qos.PrefetchCount, c.Qos.PrefetchSize, c.Qos.Global); err != nil {
+	if err := r.amqp.WithQos(
+		r.config.qos.prefetchCount,
+		r.config.qos.prefetchSize,
+		r.config.qos.global,
+	); err != nil {
 		return nil, err
 	}
 
-	if c.Threshold == 0 {
-		c.Threshold = 5
-	}
+	r.breaker = gobreaker.NewCircuitBreaker(newBreakerSettings(r.config))
 
-	if c.Retry.Sleep == 0 {
-		c.Retry.reconnectSleep = time.Second * 10
-	}
+	go r.register()
+	go r.listenClose()
 
-	ri := newRabbus(amqpWrapper, c)
-
-	go ri.register()
-	go ri.listenClose()
-
-	return ri, nil
+	return r, nil
 }
 
 // EmitAsync emits a message to RabbitMQ, but does not wait for the response from broker.
-func (ri *Rabbus) EmitAsync() chan<- Message {
-	return ri.emit
-}
+func (r *Rabbus) EmitAsync() chan<- Message { return r.emit }
 
 // EmitErr returns an error if encoding payload fails, or if after circuit breaker is open or retries attempts exceed.
-func (ri *Rabbus) EmitErr() <-chan error {
-	return ri.emitErr
-}
+func (r *Rabbus) EmitErr() <-chan error { return r.emitErr }
 
 // EmitOk returns true when the message was sent.
-func (ri *Rabbus) EmitOk() <-chan struct{} {
-	return ri.emitOk
-}
+func (r *Rabbus) EmitOk() <-chan struct{} { return r.emitOk }
 
 // Listen to a message from RabbitMQ, returns
 // an error if exchange, queue name and function handler not passed or if an error occurred while creating
 // amqp consumer.
-func (ri *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
+func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
 
-	msgs, err := ri.amqp.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, ri.config.Durable)
+	msgs, err := r.amqp.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
 	if err != nil {
 		return nil, err
 	}
 
-	ri.mu.Lock()
-	ri.exDeclared[c.Exchange] = struct{}{}
-	ri.mu.Unlock()
+	r.mu.Lock()
+	r.exDeclared[c.Exchange] = struct{}{}
+	r.mu.Unlock()
 
 	messages := make(chan ConsumerMessage, 256)
-	go ri.wrapMessage(c, msgs, messages)
-	go ri.listenReconn(c, messages)
+	go r.wrapMessage(c, msgs, messages)
+	go r.listenReconn(c, messages)
 
 	return messages, nil
 }
 
 // Close attempt to close channel and connection.
-func (ri *Rabbus) Close() error {
-	close(ri.emit)
-	close(ri.emitOk)
-	close(ri.emitErr)
-	close(ri.reconn)
+func (r *Rabbus) Close() error {
+	close(r.emit)
+	close(r.emitOk)
+	close(r.emitErr)
+	close(r.reconn)
 
-	return ri.amqp.Close()
+	return r.amqp.Close()
 }
 
-func (ri *Rabbus) register() {
-	for m := range ri.emit {
-		ri.produce(m)
+func (r *Rabbus) register() {
+	for m := range r.emit {
+		r.produce(m)
 	}
 }
 
-func (ri *Rabbus) produce(m Message) {
-	if _, ok := ri.exDeclared[m.Exchange]; !ok {
-		if err := ri.amqp.WithExchange(m.Exchange, m.Kind, ri.config.Durable); err != nil {
-			ri.emitErr <- err
+func (r *Rabbus) produce(m Message) {
+	if _, ok := r.exDeclared[m.Exchange]; !ok {
+		if err := r.amqp.WithExchange(m.Exchange, m.Kind, r.config.durable); err != nil {
+			r.emitErr <- err
 			return
 		}
-		ri.exDeclared[m.Exchange] = struct{}{}
+		r.exDeclared[m.Exchange] = struct{}{}
 	}
 
 	if m.ContentType == "" {
@@ -278,84 +256,188 @@ func (ri *Rabbus) produce(m Message) {
 		Body:            m.Payload,
 	}
 
-	if _, err := ri.breaker.Execute(func() (interface{}, error) {
+	if _, err := r.breaker.Execute(func() (interface{}, error) {
 		return nil, retry.Do(func() error {
-			return ri.amqp.Publish(m.Exchange, m.Key, opts)
-		}, ri.config.Retry.Attempts, ri.config.Retry.Sleep)
+			return r.amqp.Publish(m.Exchange, m.Key, opts)
+		}, r.config.retrycfg.attempts, r.config.retrycfg.sleep)
 	}); err != nil {
-		ri.emitErr <- err
+		r.emitErr <- err
 		return
 	}
 
-	ri.emitOk <- struct{}{}
+	r.emitOk <- struct{}{}
 }
 
-func (ri *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, targetChan chan ConsumerMessage) {
+// Durable indicates of the queue will survive broker restarts. Default to true.
+func Durable(durable bool) Option {
+	return func(r *Rabbus) error {
+		r.config.durable = durable
+		return nil
+	}
+}
+
+// PassiveExchange forces passive connection with all exchanges using
+// amqp's ExchangeDeclarePassive instead the default ExchangeDeclare
+func PassiveExchange(passiveex bool) Option {
+	return func(r *Rabbus) error {
+		r.config.passiveex = passiveex
+		return nil
+	}
+}
+
+// PrefetchCount limit the number of unacknowledged messages.
+func PrefetchCount(count int) Option {
+	return func(r *Rabbus) error {
+		r.config.qos.prefetchCount = count
+		return nil
+	}
+}
+
+// PrefetchSize when greater than zero, the server will try to keep at least
+// that many bytes of deliveries flushed to the network before receiving
+// acknowledgments from the consumers.
+func PrefetchSize(size int) Option {
+	return func(r *Rabbus) error {
+		r.config.qos.prefetchSize = size
+		return nil
+	}
+}
+
+// QosGlobal when global is true, these Qos settings apply to all existing and future
+// consumers on all channels on the same connection. When false, the Channel.Qos
+// settings will apply to all existing and future consumers on this channel.
+// RabbitMQ does not implement the global flag.
+func QosGlobal(global bool) Option {
+	return func(r *Rabbus) error {
+		r.config.qos.global = global
+		return nil
+	}
+}
+
+// Attempts is the max number of retries on broker outages.
+func Attempts(attempts int) Option {
+	return func(r *Rabbus) error {
+		r.config.retrycfg.attempts = attempts
+		return nil
+	}
+}
+
+// Sleep is the sleep time of the retry mechanism.
+func Sleep(sleep time.Duration) Option {
+	return func(r *Rabbus) error {
+		if sleep == 0 {
+			r.config.retrycfg.reconnectSleep = time.Second * 10
+		}
+		r.config.retrycfg.sleep = sleep
+		return nil
+	}
+}
+
+// BreakerInterval is the cyclic period of the closed state for CircuitBreaker to clear the internal counts,
+// If Interval is 0, CircuitBreaker doesn't clear the internal counts during the closed state.
+func BreakerInterval(interval time.Duration) Option {
+	return func(r *Rabbus) error {
+		r.config.breaker.interval = interval
+		return nil
+	}
+}
+
+// BreakerTimeout is the period of the open state, after which the state of CircuitBreaker becomes half-open.
+// If Timeout is 0, the timeout value of CircuitBreaker is set to 60 seconds.
+func BreakerTimeout(timeout time.Duration) Option {
+	return func(r *Rabbus) error {
+		r.config.breaker.timeout = timeout
+		return nil
+	}
+}
+
+// Threshold when a threshold of failures has been reached, future calls to the broker will not run.
+// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
+// will start running the function again. Default value is 5.
+func Threshold(threshold uint32) Option {
+	return func(r *Rabbus) error {
+		if threshold == 0 {
+			threshold = 5
+		}
+		r.config.breaker.threshold = threshold
+		return nil
+	}
+}
+
+// OnStateChange is called whenever the state of CircuitBreaker changes.
+func OnStateChange(fn OnStateChangeFunc) Option {
+	return func(r *Rabbus) error {
+		r.config.breaker.onStateChange = fn
+		return nil
+	}
+}
+
+// AmqpProvider expose a interface for interacting with amqp broker
+func AmqpProvider(provider Amqp) Option {
+	return func(r *Rabbus) error {
+		if provider != nil {
+			r.amqp = provider
+			return nil
+		}
+		return errors.New("unexpected amqp provider")
+	}
+}
+
+func (r *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, targetChan chan ConsumerMessage) {
 	for m := range sourceChan {
 		targetChan <- newConsumerMessage(m)
 	}
 }
 
-func (ri *Rabbus) listenClose() {
-	if err := <-ri.amqp.NotifyClose(make(chan *amqp.Error)); err != nil {
+func (r *Rabbus) listenClose() {
+	if err := <-r.amqp.NotifyClose(make(chan *amqp.Error)); err != nil {
 		for {
-			time.Sleep(ri.config.Retry.reconnectSleep)
+			time.Sleep(r.config.retrycfg.reconnectSleep)
 
-			aw, err := amqpwrap.New(ri.config.Dsn, ri.config.PassiveExchange)
+			aw, err := amqpwrap.New(r.config.dsn, r.config.passiveex)
 			if err != nil {
 				continue
 			}
 
-			ri.mu.Lock()
-			ri.amqp = aw
-			ri.mu.Unlock()
+			r.mu.Lock()
+			r.amqp = aw
+			r.mu.Unlock()
 
-			go ri.listenClose()
+			go r.listenClose()
 
-			ri.reconn <- struct{}{}
+			r.reconn <- struct{}{}
 
 			break
 		}
 	}
 }
 
-func (ri *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
-	for range ri.reconn {
-		msgs, err := ri.amqp.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, ri.config.Durable)
+func (r *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
+	for range r.reconn {
+		msgs, err := r.amqp.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
 		if err != nil {
-			ri.amqp.Close()
+			r.amqp.Close()
 			continue
 		}
 
-		go ri.wrapMessage(c, msgs, messages)
-		go ri.listenReconn(c, messages)
+		go r.wrapMessage(c, msgs, messages)
+		go r.listenReconn(c, messages)
 		break
 	}
 }
 
-func newRabbus(am Amqp, c Config) *Rabbus {
-	return &Rabbus{
-		amqp:       am,
-		config:     c,
-		breaker:    gobreaker.NewCircuitBreaker(newBreakerSettings(c.Breaker)),
-		emit:       make(chan Message),
-		emitErr:    make(chan error),
-		emitOk:     make(chan struct{}),
-		reconn:     make(chan struct{}),
-		exDeclared: make(map[string]struct{}),
+func newBreakerSettings(c config) gobreaker.Settings {
+	s := gobreaker.Settings{}
+	s.Name = "rabbus-circuit-breaker"
+	s.Interval = c.breaker.interval
+	s.Timeout = c.breaker.timeout
+	s.ReadyToTrip = func(counts gobreaker.Counts) bool {
+		return counts.ConsecutiveFailures > c.breaker.threshold
 	}
-}
-
-func newBreakerSettings(c Breaker) gobreaker.Settings {
-	return gobreaker.Settings{
-		Name:     "rabbus-circuit-breaker",
-		Interval: c.Interval,
-		Timeout:  c.Timeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures > c.Threshold
-		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			c.OnStateChange(name, from.String(), to.String())
-		},
+	if c.breaker.onStateChange != nil {
+		s.OnStateChange = func(name string, from gobreaker.State, to gobreaker.State) {
+			c.breaker.onStateChange(name, from.String(), to.String())
+		}
 	}
+	return s
 }
