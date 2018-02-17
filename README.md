@@ -17,7 +17,7 @@ The rabbus package exposes an interface for emitting and listening RabbitMQ mess
 ### Emit
 ```go
 import (
-  "time"
+	"time"
 
 	"github.com/rafaeljesus/rabbus"
 )
@@ -71,7 +71,7 @@ func main() {
 ```go
 import (
 	"encoding/json"
-  "time"
+	"time"
 
 	"github.com/rafaeljesus/rabbus"
 )

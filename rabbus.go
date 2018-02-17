@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	retry "github.com/hellofresh/retry-go"
 	amqpwrap "github.com/rafaeljesus/rabbus/internal/amqp"
+	"github.com/rafaeljesus/retry-go"
 	"github.com/sony/gobreaker"
 	"github.com/streadway/amqp"
 )
