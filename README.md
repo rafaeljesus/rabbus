@@ -17,19 +17,23 @@ The rabbus package exposes an interface for emitting and listening RabbitMQ mess
 ### Emit
 ```go
 import (
+  "time"
+
 	"github.com/rafaeljesus/rabbus"
 )
 
 func main() {
 	timeout := time.After(time.Second * 3)
-  cbStateChangeFunc := func(name, from, to string) { }
+	cbStateChangeFunc := func(name, from, to string) {
+		// do something when state is changed
+	}
 	r, err := rabbus.New(
-		RABBUS_DSN,
+		rabbusDsn,
 		rabbus.Durable(true),
 		rabbus.Attempts(5),
 		rabbus.Sleep(time.Second*2),
 		rabbus.Threshold(3),
-    rabbus.OnStateChange(cbStateChangeFunc),
+		rabbus.OnStateChange(cbStateChangeFunc),
 	)
 	if err != nil {
 		// handle error
@@ -67,20 +71,23 @@ func main() {
 ```go
 import (
 	"encoding/json"
+  "time"
 
 	"github.com/rafaeljesus/rabbus"
 )
 
 func main() {
 	timeout := time.After(time.Second * 3)
-  cbStateChangeFunc := func(name, from, to string) { }
+	cbStateChangeFunc := func(name, from, to string) {
+		// do something when state is changed
+	}
 	r, err := rabbus.New(
-		RABBUS_DSN,
+		rabbusDsn,
 		rabbus.Durable(true),
 		rabbus.Attempts(5),
 		rabbus.Sleep(time.Second*2),
 		rabbus.Threshold(3),
-    rabbus.OnStateChange(cbStateChangeFunc),
+		rabbus.OnStateChange(cbStateChangeFunc),
 	)
 	if err != nil {
 		// handle error
