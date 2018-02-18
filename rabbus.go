@@ -1,6 +1,7 @@
 package rabbus
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -175,10 +176,26 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 
 	r.breaker = gobreaker.NewCircuitBreaker(newBreakerSettings(r.config))
 
-	go r.register()
-	go r.listenClose()
-
 	return r, nil
+}
+
+// Run starts rabbus channels for emiting and listeting for amqp connection close
+// returns ctx error in case of any.
+func (r *Rabbus) Run(ctx context.Context) error {
+	for {
+		select {
+		case m, ok := <-r.emit:
+			if ok {
+				r.produce(m)
+			}
+		case err, ok := <-r.amqp.NotifyClose(make(chan *amqp.Error)):
+			if ok {
+				r.handleAmqpClose(err)
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // EmitAsync emits a message to RabbitMQ, but does not wait for the response from broker.
@@ -222,12 +239,6 @@ func (r *Rabbus) Close() error {
 	close(r.reconn)
 
 	return r.amqp.Close()
-}
-
-func (r *Rabbus) register() {
-	for m := range r.emit {
-		r.produce(m)
-	}
 }
 
 func (r *Rabbus) produce(m Message) {
@@ -389,26 +400,19 @@ func (r *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, ta
 	}
 }
 
-func (r *Rabbus) listenClose() {
-	if err := <-r.amqp.NotifyClose(make(chan *amqp.Error)); err != nil {
-		for {
-			time.Sleep(r.config.retrycfg.reconnectSleep)
-
-			aw, err := amqpwrap.New(r.config.dsn, r.config.passiveex)
-			if err != nil {
-				continue
-			}
-
-			r.mu.Lock()
-			r.amqp = aw
-			r.mu.Unlock()
-
-			go r.listenClose()
-
-			r.reconn <- struct{}{}
-
-			break
+func (r *Rabbus) handleAmqpClose(err error) {
+	for {
+		time.Sleep(r.config.retrycfg.reconnectSleep)
+		aw, err := amqpwrap.New(r.config.dsn, r.config.passiveex)
+		if err != nil {
+			continue
 		}
+
+		r.mu.Lock()
+		r.amqp = aw
+		r.mu.Unlock()
+		r.reconn <- struct{}{}
+		break
 	}
 }
 
