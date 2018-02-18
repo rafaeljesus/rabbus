@@ -48,18 +48,18 @@ func TestRabbus(t *testing.T) {
 			"emit async message",
 			testEmitAsyncMessage,
 		},
-		//{
-		//"emit async message fail to declare exchange",
-		//testEmitAsyncMessageFailToDeclareExchange,
-		//},
-		//{
-		//"emit async message fail to publish",
-		//testEmitAsyncMessageFailToPublish,
-		//},
-		//{
-		//"emit async message ensure breaker",
-		//testEmitAsyncMessageEnsureBreaker,
-		//},
+		{
+			"emit async message fail to declare exchange",
+			testEmitAsyncMessageFailToDeclareExchange,
+		},
+		{
+			"emit async message fail to publish",
+			testEmitAsyncMessageFailToPublish,
+		},
+		{
+			"emit async message ensure breaker",
+			testEmitAsyncMessageEnsureBreaker,
+		},
 	}
 
 	for _, test := range tests {
@@ -310,13 +310,12 @@ func testEmitAsyncMessageFailToDeclareExchange(t *testing.T) {
 		}
 	}(r)
 
-	r.EmitAsync() <- msg
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go r.Run(ctx)
 
+	r.EmitAsync() <- msg
 outer:
 	for {
 		select {
