@@ -72,8 +72,8 @@ type (
 
 	// Rabbus interpret (implement) Rabbus interface definition
 	Rabbus struct {
+		Amqp
 		mu         sync.RWMutex
-		amqp       Amqp
 		breaker    *gobreaker.CircuitBreaker
 		emit       chan Message
 		emitErr    chan error
@@ -148,7 +148,7 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		emit:       make(chan Message),
 		emitErr:    make(chan error),
 		emitOk:     make(chan struct{}),
-		reconn:     make(chan struct{}),
+		reconn:     make(chan struct{}, 10),
 		exDeclared: make(map[string]struct{}),
 	}
 
@@ -158,15 +158,15 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		}
 	}
 
-	if r.amqp == nil {
+	if r.Amqp == nil {
 		amqpWrapper, err := amqpwrap.New(dsn, r.config.passiveex)
 		if err != nil {
 			return nil, err
 		}
-		r.amqp = amqpWrapper
+		r.Amqp = amqpWrapper
 	}
 
-	if err := r.amqp.WithQos(
+	if err := r.WithQos(
 		r.config.qos.prefetchCount,
 		r.config.qos.prefetchSize,
 		r.config.qos.global,
@@ -174,6 +174,7 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		return nil, err
 	}
 
+	r.config.dsn = dsn
 	r.breaker = gobreaker.NewCircuitBreaker(newBreakerSettings(r.config))
 
 	return r, nil
@@ -188,7 +189,7 @@ func (r *Rabbus) Run(ctx context.Context) error {
 			if ok {
 				r.produce(m)
 			}
-		case err, ok := <-r.amqp.NotifyClose(make(chan *amqp.Error)):
+		case err, ok := <-r.NotifyClose(make(chan *amqp.Error)):
 			if ok {
 				r.handleAmqpClose(err)
 			}
@@ -215,7 +216,7 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, err
 	}
 
-	msgs, err := r.amqp.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
+	msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
 	if err != nil {
 		return nil, err
 	}
@@ -231,19 +232,19 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 	return messages, nil
 }
 
-// Close attempt to close channel and connection.
+// Close channels and attempt to close channel and connection.
 func (r *Rabbus) Close() error {
 	close(r.emit)
 	close(r.emitOk)
 	close(r.emitErr)
 	close(r.reconn)
 
-	return r.amqp.Close()
+	return r.Amqp.Close()
 }
 
 func (r *Rabbus) produce(m Message) {
 	if _, ok := r.exDeclared[m.Exchange]; !ok {
-		if err := r.amqp.WithExchange(m.Exchange, m.Kind, r.config.durable); err != nil {
+		if err := r.WithExchange(m.Exchange, m.Kind, r.config.durable); err != nil {
 			r.emitErr <- err
 			return
 		}
@@ -269,7 +270,7 @@ func (r *Rabbus) produce(m Message) {
 
 	if _, err := r.breaker.Execute(func() (interface{}, error) {
 		return nil, retry.Do(func() error {
-			return r.amqp.Publish(m.Exchange, m.Key, opts)
+			return r.Publish(m.Exchange, m.Key, opts)
 		}, r.config.retrycfg.attempts, r.config.retrycfg.sleep)
 	}); err != nil {
 		r.emitErr <- err
@@ -387,7 +388,7 @@ func OnStateChange(fn OnStateChangeFunc) Option {
 func AmqpProvider(provider Amqp) Option {
 	return func(r *Rabbus) error {
 		if provider != nil {
-			r.amqp = provider
+			r.Amqp = provider
 			return nil
 		}
 		return errors.New("unexpected amqp provider")
@@ -402,14 +403,14 @@ func (r *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, ta
 
 func (r *Rabbus) handleAmqpClose(err error) {
 	for {
-		time.Sleep(r.config.retrycfg.reconnectSleep)
+		time.Sleep(time.Second)
 		aw, err := amqpwrap.New(r.config.dsn, r.config.passiveex)
 		if err != nil {
 			continue
 		}
 
 		r.mu.Lock()
-		r.amqp = aw
+		r.Amqp = aw
 		r.mu.Unlock()
 		r.reconn <- struct{}{}
 		break
@@ -418,9 +419,9 @@ func (r *Rabbus) handleAmqpClose(err error) {
 
 func (r *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
 	for range r.reconn {
-		msgs, err := r.amqp.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
+		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
 		if err != nil {
-			r.amqp.Close()
+			r.Close()
 			continue
 		}
 

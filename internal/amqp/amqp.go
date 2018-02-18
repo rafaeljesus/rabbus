@@ -1,8 +1,6 @@
 package amqp
 
-import (
-	"github.com/streadway/amqp"
-)
+import "github.com/streadway/amqp"
 
 // Amqp interpret (implement) Amqp interface definition
 type Amqp struct {
