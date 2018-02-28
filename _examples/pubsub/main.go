@@ -32,7 +32,7 @@ func main() {
 		return
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err := r.Close(); err != nil {
 			log.Fatalf("Failed to close rabbus connection %s", err)
 		}

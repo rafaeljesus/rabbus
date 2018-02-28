@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"sync"
 	"time"
@@ -31,11 +32,16 @@ func main() {
 		return
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err := r.Close(); err != nil {
 			log.Fatalf("Failed to close rabbus connection %s", err)
 		}
 	}(r)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go r.Run(ctx)
 
 	messages, err := r.Listen(rabbus.ListenConfig{
 		Exchange: "consumer_test_ex",
