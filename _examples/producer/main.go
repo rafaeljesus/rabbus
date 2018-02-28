@@ -30,7 +30,7 @@ func main() {
 		return
 	}
 
-	defer func(r rabbus.Rabbus) {
+	defer func(r *rabbus.Rabbus) {
 		if err := r.Close(); err != nil {
 			log.Fatalf("Failed to close rabbus connection %s", err)
 		}
@@ -56,11 +56,12 @@ outer:
 		select {
 		case <-r.EmitOk():
 			log.Println("Message was sent")
+			break outer
 		case err := <-r.EmitErr():
 			log.Fatalf("Failed to send message %s", err)
 			break outer
 		case <-timeout:
-			log.Println("Bye")
+			log.Println("got time out error")
 			break outer
 		}
 	}
