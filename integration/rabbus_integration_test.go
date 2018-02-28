@@ -1,6 +1,7 @@
 package rabbus
 
 import (
+	"context"
 	"strconv"
 	"sync"
 	"testing"
@@ -72,6 +73,11 @@ func testRabbusPublishSubscribe(t *testing.T) {
 		}
 	}(r)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go r.Run(ctx)
+
 	messages, err := r.Listen(rabbus.ListenConfig{
 		Exchange: "test_ex",
 		Kind:     "direct",
@@ -134,6 +140,11 @@ func benchmarkEmitAsync(b *testing.B) {
 			b.Fatalf("expected to close rabbus %s", err)
 		}
 	}(r)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go r.Run(ctx)
 
 	var wg sync.WaitGroup
 	wg.Add(b.N)

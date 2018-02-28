@@ -1,10 +1,10 @@
 ## Rabbus 🚌 ✨
 
 * A tiny wrapper over [amqp](https://github.com/streadway/amqp) exchanges and queues.
-* Automatic retries and exponential backoff for sending messages.
-* Makes use of [gobreaker](https://github.com/sony/gobreaker).
-* Automatic reconnect to RabbitMQ broker.
-* Golang channel API.
+* In memory retries with exponential backoff for sending messages.
+* Protect producer calls with [circuit breaker](https://github.com/sony/gobreaker).
+* Automatic reconnect to RabbitMQ broker when connection is lost.
+* Go channel API.
 
 ## Installation
 ```bash
@@ -17,6 +17,7 @@ The rabbus package exposes an interface for emitting and listening RabbitMQ mess
 ### Emit
 ```go
 import (
+	"context"
 	"time"
 
 	"github.com/rafaeljesus/rabbus"
@@ -45,6 +46,11 @@ func main() {
 		}
 	}(r)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go r.Run(ctx)
+
 	msg := rabbus.Message{
 		Exchange: "test_ex",
 		Kind:     "topic",
@@ -70,6 +76,7 @@ func main() {
 ### Listen
 ```go
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -98,6 +105,11 @@ func main() {
 			// handle error
 		}
 	}(r)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go r.Run(ctx)
 
 	messages, err := r.Listen(rabbus.ListenConfig{
 		Exchange: "events_ex",

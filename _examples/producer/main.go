@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -34,6 +35,11 @@ func main() {
 			log.Fatalf("Failed to close rabbus connection %s", err)
 		}
 	}(r)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go r.Run(ctx)
 
 	msg := rabbus.Message{
 		Exchange:     "producer_test_ex",
