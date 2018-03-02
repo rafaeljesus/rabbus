@@ -180,7 +180,7 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 	return r, nil
 }
 
-// Run starts rabbus channels for emiting and listeting for amqp connection close
+// Run starts rabbus channels for emitting and listening for amqp connection close
 // returns ctx error in case of any.
 func (r *Rabbus) Run(ctx context.Context) error {
 	for {
