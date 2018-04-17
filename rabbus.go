@@ -81,6 +81,7 @@ type (
 		reconn     chan struct{}
 		exDeclared map[string]struct{}
 		config
+		conDeclared int // conDeclared is a counter for the declared consumers
 	}
 
 	// Amqp expose a interface for interacting with amqp broker
@@ -221,6 +222,7 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, err
 	}
 
+	r.conDeclared++ // increase the declared consumer's counter
 	r.mu.Lock()
 	r.exDeclared[c.Exchange] = struct{}{}
 	r.mu.Unlock()
@@ -412,7 +414,9 @@ func (r *Rabbus) handleAmqpClose(err error) {
 		r.mu.Lock()
 		r.Amqp = aw
 		r.mu.Unlock()
-		r.reconn <- struct{}{}
+		for i := 1; i <= r.conDeclared; i++ {
+			r.reconn <- struct{}{}
+		}
 		break
 	}
 }
