@@ -76,10 +76,10 @@ func testCreateNewSpecifyingAmqpProvider(t *testing.T) {
 	provider := new(amqpMock)
 	provider.withQosFn = func(c, s int, g bool) error {
 		if count != c {
-			t.Fatalf("unexpected prefetch count: %t", c)
+			t.Fatalf("unexpected prefetch count: %d", c)
 		}
 		if size != s {
-			t.Fatalf("unexpected prefetch size: %t", s)
+			t.Fatalf("unexpected prefetch size: %d", s)
 		}
 		if global != g {
 			t.Fatalf("unexpected global: %t", g)
