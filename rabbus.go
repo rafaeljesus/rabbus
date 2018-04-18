@@ -48,6 +48,8 @@ type (
 		ContentType string
 		// Headers the message application headers
 		Headers map[string]interface{}
+		// ContentEncoding the message encoding.
+		ContentEncoding string
 	}
 
 	// ListenConfig carries fields for listening messages.
@@ -261,10 +263,14 @@ func (r *Rabbus) produce(m Message) {
 		m.DeliveryMode = Persistent
 	}
 
+	if m.ContentEncoding == "" {
+		m.ContentEncoding = contentEncoding
+	}
+
 	opts := amqp.Publishing{
 		Headers:         amqp.Table(m.Headers),
 		ContentType:     m.ContentType,
-		ContentEncoding: contentEncoding,
+		ContentEncoding: m.ContentEncoding,
 		DeliveryMode:    m.DeliveryMode,
 		Timestamp:       time.Now(),
 		Body:            m.Payload,
