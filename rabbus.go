@@ -222,8 +222,8 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, err
 	}
 
-	r.conDeclared++ // increase the declared consumer's counter
 	r.mu.Lock()
+	r.conDeclared++ // increase the declared consumers counter
 	r.exDeclared[c.Exchange] = struct{}{}
 	r.mu.Unlock()
 
