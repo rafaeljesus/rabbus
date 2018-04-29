@@ -80,7 +80,7 @@ func testRabbusPublishSubscribe(t *testing.T) {
 
 	messages, err := r.Listen(rabbus.ListenConfig{
 		Exchange: "test_ex",
-		Kind:     "direct",
+		Kind:     rabbus.ExchangeDirect,
 		Key:      "test_key",
 		Queue:    "test_q",
 	})
@@ -101,7 +101,7 @@ func testRabbusPublishSubscribe(t *testing.T) {
 
 	msg := rabbus.Message{
 		Exchange:     "test_ex",
-		Kind:         "direct",
+		Kind:         rabbus.ExchangeDirect,
 		Key:          "test_key",
 		Payload:      []byte(`foo`),
 		DeliveryMode: rabbus.Persistent,
@@ -167,7 +167,7 @@ func benchmarkEmitAsync(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		msg := rabbus.Message{
 			Exchange:     "test_bench_ex" + strconv.Itoa(n%10),
-			Kind:         "direct",
+			Kind:         rabbus.ExchangeDirect,
 			Key:          "test_key",
 			Payload:      []byte(`foo`),
 			DeliveryMode: rabbus.Persistent,

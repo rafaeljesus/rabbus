@@ -153,7 +153,7 @@ func testCreateNewListener(t *testing.T) {
 	durable := true
 	config := ListenConfig{
 		Exchange: "exchange",
-		Kind:     "direct",
+		Kind:     ExchangeDirect,
 		Key:      "key",
 		Queue:    "queue",
 	}
@@ -210,7 +210,7 @@ func testFailToCreateNewListenerWhenCreateConsumerReturnsError(t *testing.T) {
 
 	_, err = r.Listen(ListenConfig{
 		Exchange: "exchange",
-		Kind:     "direct",
+		Kind:     ExchangeDirect,
 		Key:      "key",
 		Queue:    "queue",
 	})
@@ -222,7 +222,7 @@ func testFailToCreateNewListenerWhenCreateConsumerReturnsError(t *testing.T) {
 func testEmitAsyncMessage(t *testing.T) {
 	msg := Message{
 		Exchange: "exchange",
-		Kind:     "direct",
+		Kind:     ExchangeDirect,
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
@@ -291,7 +291,7 @@ outer:
 func testEmitAsyncMessageFailToDeclareExchange(t *testing.T) {
 	msg := Message{
 		Exchange: "exchange",
-		Kind:     "direct",
+		Kind:     ExchangeDirect,
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
@@ -337,7 +337,7 @@ outer:
 func testEmitAsyncMessageFailToPublish(t *testing.T) {
 	msg := Message{
 		Exchange: "exchange",
-		Kind:     "direct",
+		Kind:     ExchangeDirect,
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
@@ -384,7 +384,7 @@ func testEmitAsyncMessageEnsureBreaker(t *testing.T) {
 	threshold := uint32(1)
 	msg := Message{
 		Exchange: "exchange",
-		Kind:     "direct",
+		Kind:     ExchangeDirect,
 		Key:      "key",
 		Payload:  []byte(`foo`),
 	}
