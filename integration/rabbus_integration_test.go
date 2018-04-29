@@ -2,6 +2,7 @@ package rabbus
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -11,14 +12,21 @@ import (
 )
 
 const (
-	RABBUS_DSN = "amqp://localhost:5672"
+	amqpDsnEnv = "AMQP_DSN"
 )
 
 var (
+	amqpDsn string
 	timeout = time.After(3 * time.Second)
 )
 
 func TestRabbus(t *testing.T) {
+	if os.Getenv(amqpDsnEnv) == "" {
+		t.SkipNow()
+	}
+
+	amqpDsn = os.Getenv(amqpDsnEnv)
+
 	t.Parallel()
 
 	tests := []struct {
@@ -39,13 +47,17 @@ func TestRabbus(t *testing.T) {
 }
 
 func BenchmarkRabbus(b *testing.B) {
+	if os.Getenv(amqpDsnEnv) == "" {
+		b.SkipNow()
+	}
+
 	tests := []struct {
 		scenario string
 		function func(*testing.B)
 	}{
 		{
-			scenario: "rabbus emit async benchmark",
-			function: benchmarkEmitAsync,
+			"rabbus emit async benchmark",
+			benchmarkEmitAsync,
 		},
 	}
 
@@ -58,7 +70,7 @@ func BenchmarkRabbus(b *testing.B) {
 
 func testRabbusPublishSubscribe(t *testing.T) {
 	r, err := rabbus.New(
-		RABBUS_DSN,
+		amqpDsn,
 		rabbus.Durable(true),
 		rabbus.Attempts(5),
 		rabbus.BreakerTimeout(time.Second*2),
@@ -127,7 +139,7 @@ outer:
 
 func benchmarkEmitAsync(b *testing.B) {
 	r, err := rabbus.New(
-		RABBUS_DSN,
+		amqpDsn,
 		rabbus.Attempts(1),
 		rabbus.BreakerTimeout(time.Second*2),
 	)

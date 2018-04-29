@@ -1,11 +1,6 @@
-version: '2'
+version: '3'
 services:
-  rabbitmq:
-    container_name: dev_rabbitmq
-    image: rabbitmq:3.5.6-management
-    hostname: rabbitmq
+  rabbit:
+    image: rabbitmq:3.6-management-alpine
     ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - ./data/rabbitmq:/var/lib/rabbitmq
+      - "5672"
