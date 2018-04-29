@@ -17,10 +17,16 @@ const (
 	Transient uint8 = 1
 	// Persistent messages will be restored to durable queues and lost on non-durable queues during server restart.
 	Persistent uint8 = 2
-	// ContentTypeJSON define json content type
+	// ContentTypeJSON define json content type.
 	ContentTypeJSON = "application/json"
-	// ContentTypePlain define plain text content type
+	// ContentTypePlain define plain text content type.
 	ContentTypePlain = "plain/text"
+	// ExchangeDirect indicates the exchange is of direct type.
+	ExchangeDirect = "direct"
+	// ExchangeFanout indicates the exchange is of fanout type.
+	ExchangeFanout = "fanout"
+	// ExchangeTopic indicates the exchange is of topic type.
+	ExchangeTopic = "topic"
 
 	contentEncoding = "UTF-8"
 )

@@ -2,12 +2,14 @@ package amqp
 
 import "github.com/streadway/amqp"
 
-// Amqp interpret (implement) Amqp interface definition
-type Amqp struct {
-	conn            *amqp.Connection
-	ch              *amqp.Channel
-	passiveExchange bool
-}
+type (
+	// Amqp interpret (implement) Amqp interface definition
+	Amqp struct {
+		conn            *amqp.Connection
+		ch              *amqp.Channel
+		passiveExchange bool
+	}
+)
 
 // New returns a new Amqp configured, or returning an non-nil err
 // if an error occurred while creating connection or channel.
