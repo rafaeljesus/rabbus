@@ -2,7 +2,7 @@ machine:
   environment:
     IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/rafaeljesus"
     APP_PATH: "$IMPORT_PATH/rabbus"
-    RABBUS_DSN: "amqp://localhost:5672"
+    AMQP_DSN: "amqp://localhost:5672"
   services:
     - rabbitmq-server
 
@@ -16,4 +16,4 @@ dependencies:
 
 test:
   override:
-    - cd "$APP_PATH" && make test && make integration-test
+    - cd "$APP_PATH" && make test && make integration-test-ci
