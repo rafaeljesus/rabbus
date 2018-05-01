@@ -1,4 +1,4 @@
-.PHONY: all deps test
+.PHONY: all deps test integration-test-ci
 
 all: deps test integration-test
 
@@ -15,3 +15,6 @@ integration-test:
 	AMQP_DSN="amqp://guest:guest@`docker-compose port rabbit 5672`/" \
 		go test -v -cover integration/rabbus_integration_test.go -bench .
 	@docker-compose down -v
+
+integration-test-ci:
+	@go test -v -race -cover integration/rabbus_integration_test.go -bench .
