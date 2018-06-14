@@ -1,6 +1,10 @@
 package amqp
 
-import "github.com/streadway/amqp"
+import (
+	"crypto/tls"
+
+	"github.com/streadway/amqp"
+)
 
 type (
 	// Amqp interpret (implement) Amqp interface definition
@@ -11,10 +15,9 @@ type (
 	}
 )
 
-// New returns a new Amqp configured, or returning an non-nil err
-// if an error occurred while creating connection or channel.
-func New(dsn string, pex bool) (*Amqp, error) {
-	conn, ch, err := createConnAndChan(dsn)
+func newImpl(dsn string, pex bool, tlsCfg *tls.Config) (*Amqp, error) {
+
+	conn, ch, err := createConnAndChan(dsn, tlsCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -24,6 +27,19 @@ func New(dsn string, pex bool) (*Amqp, error) {
 		ch:              ch,
 		passiveExchange: pex,
 	}, nil
+}
+
+// NewTLS returns a new Amqp configured with TLS support, or returning an non-nil err
+// if an error occurred while creating connection or channel.
+func NewTLS(dsn string, pex bool, tlsCfg *tls.Config) (*Amqp, error) {
+
+	return newImpl(dsn, pex, tlsCfg)
+}
+
+// New returns a new Amqp configured, or returning an non-nil err
+// if an error occurred while creating connection or channel.
+func New(dsn string, pex bool) (*Amqp, error) {
+	return newImpl(dsn, pex, nil)
 }
 
 // Publish wraps amqp.Publish method
@@ -81,8 +97,17 @@ func (ai *Amqp) Close() error {
 	return nil
 }
 
-func createConnAndChan(dsn string) (*amqp.Connection, *amqp.Channel, error) {
-	conn, err := amqp.Dial(dsn)
+func createConnAndChan(dsn string, tlsCfg *tls.Config) (*amqp.Connection, *amqp.Channel, error) {
+	var conn *amqp.Connection
+	var err error
+
+	if tlsCfg != nil {
+
+		conn, err = amqp.DialTLS(dsn, tlsCfg)
+	} else {
+		conn, err = amqp.Dial(dsn)
+	}
+
 	if err != nil {
 		return nil, nil, err
 	}
