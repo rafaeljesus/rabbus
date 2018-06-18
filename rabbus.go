@@ -192,15 +192,17 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 // Run starts rabbus channels for emitting and listening for amqp connection close
 // returns ctx error in case of any.
 func (r *Rabbus) Run(ctx context.Context) error {
+	notifyClose := r.NotifyClose(make(chan *amqp.Error))
 	for {
 		select {
 		case m, ok := <-r.emit:
 			if ok {
 				r.produce(m)
 			}
-		case err, ok := <-r.NotifyClose(make(chan *amqp.Error)):
+		case err, ok := <-notifyClose:
 			if ok {
 				r.handleAmqpClose(err)
+				notifyClose = r.NotifyClose(make(chan *amqp.Error))
 			}
 		case <-ctx.Done():
 			return ctx.Err()
