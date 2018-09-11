@@ -2,6 +2,7 @@ package rabbus
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"sync"
 	"time"
@@ -114,6 +115,7 @@ type (
 		retrycfg
 		breaker
 		qos
+		tls *tls.Config
 	}
 
 	retrycfg struct {
@@ -149,10 +151,8 @@ func (lc ListenConfig) validate() error {
 	return nil
 }
 
-// New returns a new Rabbus configured with the
-// variables from the config parameter, or returning an non-nil err
-// if an error occurred while creating connection and channel.
-func New(dsn string, options ...Option) (*Rabbus, error) {
+func newBus(dsn string, tlsCfg *tls.Config, options ...Option) (*Rabbus, error) {
+
 	r := &Rabbus{
 		emit:       make(chan Message),
 		emitErr:    make(chan error),
@@ -161,6 +161,10 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		exDeclared: make(map[string]struct{}),
 	}
 
+	r.config.dsn = dsn
+	if tlsCfg != nil {
+		r.config.tls = tlsCfg
+	}
 	for _, o := range options {
 		if err := o(r); err != nil {
 			return nil, err
@@ -168,11 +172,10 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 	}
 
 	if r.Amqp == nil {
-		amqpWrapper, err := amqpwrap.New(dsn, r.config.passiveex)
+		err := r.newAmqp()
 		if err != nil {
 			return nil, err
 		}
-		r.Amqp = amqpWrapper
 	}
 
 	if err := r.WithQos(
@@ -183,10 +186,40 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		return nil, err
 	}
 
-	r.config.dsn = dsn
 	r.breaker = gobreaker.NewCircuitBreaker(newBreakerSettings(r.config))
 
 	return r, nil
+}
+
+// NewTLS returns a new Rabbus which establishes a tls secure connection and configured with the
+// variables from the config parameter, or returning an non-nil err
+// if an error occurred while creating connection and channel.
+func NewTLS(dsn string, tlsCfg *tls.Config, options ...Option) (*Rabbus, error) {
+	return newBus(dsn, tlsCfg, options...)
+}
+
+// New returns a new Rabbus configured with the
+// variables from the config parameter, or returning an non-nil err
+// if an error occurred while creating connection and channel.
+func New(dsn string, options ...Option) (*Rabbus, error) {
+	return newBus(dsn, nil, options...)
+}
+
+func (r *Rabbus) newAmqp() error {
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var aw Amqp
+	var err error
+	if r.config.tls != nil {
+		aw, err = amqpwrap.NewTLS(r.config.dsn, r.config.passiveex, r.config.tls)
+	} else {
+		aw, err = amqpwrap.New(r.config.dsn, r.config.passiveex)
+	}
+
+	r.Amqp = aw
+	return err
 }
 
 // Run starts rabbus channels for emitting and listening for amqp connection close
@@ -430,14 +463,13 @@ func (r *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, ta
 func (r *Rabbus) handleAmqpClose(err error) {
 	for {
 		time.Sleep(time.Second)
-		aw, err := amqpwrap.New(r.config.dsn, r.config.passiveex)
+
+		err := r.newAmqp()
+
 		if err != nil {
 			continue
 		}
 
-		r.mu.Lock()
-		r.Amqp = aw
-		r.mu.Unlock()
 		for i := 1; i <= r.conDeclared; i++ {
 			r.reconn <- struct{}{}
 		}
