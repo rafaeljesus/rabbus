@@ -256,12 +256,12 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 
 // Close channels and attempt to close channel and connection.
 func (r *Rabbus) Close() error {
+	err := r.Amqp.Close()
 	close(r.emit)
 	close(r.emitOk)
 	close(r.emitErr)
 	close(r.reconn)
-
-	return r.Amqp.Close()
+	return err
 }
 
 func (r *Rabbus) produce(m Message) {
