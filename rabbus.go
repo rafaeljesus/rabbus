@@ -438,6 +438,16 @@ func (r *Rabbus) handleAmqpClose(err error) {
 		r.mu.Lock()
 		r.Amqp = aw
 		r.mu.Unlock()
+
+		if err := r.WithQos(
+			r.config.qos.prefetchCount,
+			r.config.qos.prefetchSize,
+			r.config.qos.global,
+		); err != nil {
+			r.Amqp.Close()
+			continue
+		}
+
 		for i := 1; i <= r.conDeclared; i++ {
 			r.reconn <- struct{}{}
 		}
