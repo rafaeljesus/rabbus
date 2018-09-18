@@ -444,6 +444,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 			r.config.qos.prefetchSize,
 			r.config.qos.global,
 		); err != nil {
+			r.Amqp.Close()
 			continue
 		}
 
