@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	amqpwrap "github.com/rafaeljesus/rabbus/internal/amqp"
+	amqpWrap "github.com/rafaeljesus/rabbus/internal/amqp"
 	"github.com/rafaeljesus/retry-go"
 	"github.com/sony/gobreaker"
 	"github.com/streadway/amqp"
@@ -92,7 +92,7 @@ type (
 		conDeclared int // conDeclared is a counter for the declared consumers
 	}
 
-	// Amqp expose a interface for interacting with amqp broker
+	// Amqp exposes a interface for interacting with AMQP broker
 	Amqp interface {
 		// Publish wraps amqp.Publish method
 		Publish(exchange, key string, opts amqp.Publishing) error
@@ -108,15 +108,26 @@ type (
 		Close() error
 	}
 
+	// Emitter exposes a interface for publishing messages to AMQP broker
+	Emitter interface {
+		// EmitAsync emits a message to RabbitMQ, but does not wait for the response from broker.
+		EmitAsync() chan<- Message
+		// EmitErr returns an error if encoding payload fails, or if after circuit breaker is open or retries attempts exceed.
+		EmitErr() <-chan error
+		// EmitOk returns true when the message was sent.
+		EmitOk() <-chan struct{}
+	}
+
 	config struct {
-		dsn                string
-		durable, passiveex bool
-		retrycfg
+		dsn               string
+		durable           bool
+		isExchangePassive bool
+		retryCfg
 		breaker
 		qos
 	}
 
-	retrycfg struct {
+	retryCfg struct {
 		attempts              int
 		sleep, reconnectSleep time.Duration
 	}
@@ -168,7 +179,7 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 	}
 
 	if r.Amqp == nil {
-		amqpWrapper, err := amqpwrap.New(dsn, r.config.passiveex)
+		amqpWrapper, err := amqpWrap.New(dsn, r.config.isExchangePassive)
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +308,7 @@ func (r *Rabbus) produce(m Message) {
 	if _, err := r.breaker.Execute(func() (interface{}, error) {
 		return nil, retry.Do(func() error {
 			return r.Publish(m.Exchange, m.Key, opts)
-		}, r.config.retrycfg.attempts, r.config.retrycfg.sleep)
+		}, r.config.retryCfg.attempts, r.config.retryCfg.sleep)
 	}); err != nil {
 		r.emitErr <- err
 		return
@@ -316,9 +327,9 @@ func Durable(durable bool) Option {
 
 // PassiveExchange forces passive connection with all exchanges using
 // amqp's ExchangeDeclarePassive instead the default ExchangeDeclare
-func PassiveExchange(passiveex bool) Option {
+func PassiveExchange(isExchangePassive bool) Option {
 	return func(r *Rabbus) error {
-		r.config.passiveex = passiveex
+		r.config.isExchangePassive = isExchangePassive
 		return nil
 	}
 }
@@ -355,7 +366,7 @@ func QosGlobal(global bool) Option {
 // Attempts is the max number of retries on broker outages.
 func Attempts(attempts int) Option {
 	return func(r *Rabbus) error {
-		r.config.retrycfg.attempts = attempts
+		r.config.retryCfg.attempts = attempts
 		return nil
 	}
 }
@@ -364,9 +375,9 @@ func Attempts(attempts int) Option {
 func Sleep(sleep time.Duration) Option {
 	return func(r *Rabbus) error {
 		if sleep == 0 {
-			r.config.retrycfg.reconnectSleep = time.Second * 10
+			r.config.retryCfg.reconnectSleep = time.Second * 10
 		}
-		r.config.retrycfg.sleep = sleep
+		r.config.retryCfg.sleep = sleep
 		return nil
 	}
 }
@@ -430,7 +441,7 @@ func (r *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, ta
 func (r *Rabbus) handleAmqpClose(err error) {
 	for {
 		time.Sleep(time.Second)
-		aw, err := amqpwrap.New(r.config.dsn, r.config.passiveex)
+		aw, err := amqpWrap.New(r.config.dsn, r.config.isExchangePassive)
 		if err != nil {
 			continue
 		}
