@@ -81,13 +81,14 @@ type (
 	// Rabbus interpret (implement) Rabbus interface definition
 	Rabbus struct {
 		Amqp
-		mu         sync.RWMutex
-		breaker    *gobreaker.CircuitBreaker
-		emit       chan Message
-		emitErr    chan error
-		emitOk     chan struct{}
-		reconn     chan struct{}
-		exDeclared map[string]struct{}
+		mu            sync.RWMutex
+		breaker       *gobreaker.CircuitBreaker
+		emit          chan Message
+		emitErr       chan error
+		emitOk        chan struct{}
+		reconn        chan struct{}
+		listenErrChan chan error
+		exDeclared    map[string]struct{}
 		config
 		conDeclared int // conDeclared is a counter for the declared consumers
 	}
@@ -165,11 +166,12 @@ func (lc ListenConfig) validate() error {
 // if an error occurred while creating connection and channel.
 func New(dsn string, options ...Option) (*Rabbus, error) {
 	r := &Rabbus{
-		emit:       make(chan Message),
-		emitErr:    make(chan error),
-		emitOk:     make(chan struct{}),
-		reconn:     make(chan struct{}),
-		exDeclared: make(map[string]struct{}),
+		emit:          make(chan Message),
+		emitErr:       make(chan error),
+		emitOk:        make(chan struct{}),
+		reconn:        make(chan struct{}),
+		exDeclared:    make(map[string]struct{}),
+		listenErrChan: make(chan error, 1),
 	}
 
 	for _, o := range options {
@@ -443,6 +445,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 		time.Sleep(time.Second)
 		aw, err := amqpWrap.New(r.config.dsn, r.config.isExchangePassive)
 		if err != nil {
+			r.listenErrChan <- err
 			continue
 		}
 
@@ -455,6 +458,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 			r.config.qos.prefetchSize,
 			r.config.qos.global,
 		); err != nil {
+			r.listenErrChan <- err
 			r.Amqp.Close()
 			continue
 		}
@@ -470,6 +474,7 @@ func (r *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
 	for range r.reconn {
 		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
 		if err != nil {
+			r.listenErrChan <- err
 			continue
 		}
 
@@ -493,4 +498,10 @@ func newBreakerSettings(c config) gobreaker.Settings {
 		}
 	}
 	return s
+}
+
+// ListenError returns the receive-only channel that signals asyncronous errors that happens after connection established.
+// for example : failed to re-connect, failed to re-create consumers, failed to re-set QoS configuration.
+func (r *Rabbus) ListenError() <-chan error {
+	return r.listenErrChan
 }
