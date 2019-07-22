@@ -7,6 +7,7 @@ import (
 	"time"
 
 	amqpWrap "github.com/rafaeljesus/rabbus/internal/amqp"
+	
 	"github.com/rafaeljesus/retry-go"
 	"github.com/sony/gobreaker"
 	"github.com/streadway/amqp"
@@ -71,6 +72,11 @@ type (
 		PassiveExchange bool
 		// Queue the queue name
 		Queue string
+		// DeclareArgs is a list of arguments accepted for when declaring the queue.
+		// See https://www.rabbitmq.com/queues.html#optional-arguments for more info.
+		DeclareArgs amqp.Table
+		// BindArgs is a list of arguments accepted for when binding the exchange to the queue
+		BindArgs amqp.Table
 	}
 
 	// Delivery wraps amqp.Delivery struct
@@ -248,7 +254,7 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, err
 	}
 
-	msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
+	msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs, c.BindArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +474,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 
 func (r *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
 	for range r.reconn {
-		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
+		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs, c.BindArgs)
 		if err != nil {
 			continue
 		}
