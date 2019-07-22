@@ -80,7 +80,7 @@ type (
 
 	// Rabbus interpret (implement) Rabbus interface definition
 	Rabbus struct {
-		Amqp
+		AMQP
 		mu         sync.RWMutex
 		breaker    *gobreaker.CircuitBreaker
 		emit       chan Message
@@ -92,12 +92,12 @@ type (
 		conDeclared int // conDeclared is a counter for the declared consumers
 	}
 
-	// Amqp exposes a interface for interacting with AMQP broker
-	Amqp interface {
+	// AMQP exposes a interface for interacting with AMQP broker
+	AMQP interface {
 		// Publish wraps amqp.Publish method
 		Publish(exchange, key string, opts amqp.Publishing) error
 		// CreateConsumer creates a amqp consumer
-		CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error)
+		CreateConsumer(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error)
 		// WithExchange creates a amqp exchange
 		WithExchange(exchange, kind string, durable bool) error
 		// WithQos wrapper over amqp.Qos method
@@ -178,12 +178,12 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		}
 	}
 
-	if r.Amqp == nil {
+	if r.AMQP == nil {
 		amqpWrapper, err := amqpWrap.New(dsn, r.config.isExchangePassive)
 		if err != nil {
 			return nil, err
 		}
-		r.Amqp = amqpWrapper
+		r.AMQP = amqpWrapper
 	}
 
 	if err := r.WithQos(
@@ -267,7 +267,7 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 
 // Close channels and attempt to close channel and connection.
 func (r *Rabbus) Close() error {
-	err := r.Amqp.Close()
+	err := r.AMQP.Close()
 	close(r.emit)
 	close(r.emitOk)
 	close(r.emitErr)
@@ -422,10 +422,10 @@ func OnStateChange(fn OnStateChangeFunc) Option {
 }
 
 // AmqpProvider expose a interface for interacting with amqp broker
-func AmqpProvider(provider Amqp) Option {
+func AmqpProvider(provider AMQP) Option {
 	return func(r *Rabbus) error {
 		if provider != nil {
-			r.Amqp = provider
+			r.AMQP = provider
 			return nil
 		}
 		return errors.New("unexpected amqp provider")
@@ -447,7 +447,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 		}
 
 		r.mu.Lock()
-		r.Amqp = aw
+		r.AMQP = aw
 		r.mu.Unlock()
 
 		if err := r.WithQos(
@@ -455,7 +455,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 			r.config.qos.prefetchSize,
 			r.config.qos.global,
 		); err != nil {
-			r.Amqp.Close()
+			r.AMQP.Close()
 			continue
 		}
 
