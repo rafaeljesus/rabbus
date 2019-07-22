@@ -4,7 +4,7 @@ all: deps test integration-test
 
 deps:
 	@go get -u github.com/golang/dep/cmd/dep
-	@dep ensure
+	@dep ensure -v -vendor-only
 
 test:
 	@go test -v -race -cover
