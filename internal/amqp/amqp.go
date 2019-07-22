@@ -32,7 +32,6 @@ func (ai *AMQP) Publish(exchange, key string, opts amqp.Publishing) error {
 }
 
 // CreateConsumer creates a amqp consumer. Most interesting declare args are:
-// - x-message-ttl: message TTL for the queue in ms, e.g. x-message-ttl: 60000 - 60 sec, see https://www.rabbitmq.com/ttl.html#message-ttl-using-x-args for details
 func (ai *AMQP) CreateConsumer(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error) {
 	if err := ai.WithExchange(exchange, kind, durable); err != nil {
 		return nil, err
