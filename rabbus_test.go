@@ -159,7 +159,7 @@ func testCreateNewListener(t *testing.T) {
 	}
 	provider := new(amqpMock)
 	provider.withQosFn = func(count, size int, global bool) error { return nil }
-	provider.createConsumerFn = func(exchange, key, kind, queue string, d bool) (<-chan amqp.Delivery, error) {
+	provider.createConsumerFn = func(exchange, key, kind, queue string, d bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error) {
 		if exchange != config.Exchange {
 			t.Fatalf("unexpected exchange: %s", exchange)
 		}
@@ -200,7 +200,7 @@ func testCreateNewListener(t *testing.T) {
 func testFailToCreateNewListenerWhenCreateConsumerReturnsError(t *testing.T) {
 	provider := new(amqpMock)
 	provider.withQosFn = func(count, size int, global bool) error { return nil }
-	provider.createConsumerFn = func(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
+	provider.createConsumerFn = func(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error) {
 		return nil, errAmqp
 	}
 	r, err := New(dsn, AmqpProvider(provider))
@@ -434,7 +434,7 @@ type amqpMock struct {
 	publishInvoked        bool
 	publishFn             func(exchange, key string, opts amqp.Publishing) error
 	createConsumerInvoked bool
-	createConsumerFn      func(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error)
+	createConsumerFn      func(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error)
 	withExchangeInvoked   bool
 	withExchangeFn        func(exchange, kind string, durable bool) error
 	withQosInvoked        bool
@@ -446,9 +446,9 @@ func (m *amqpMock) Publish(exchange, key string, opts amqp.Publishing) error {
 	return m.publishFn(exchange, key, opts)
 }
 
-func (m *amqpMock) CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error) {
+func (m *amqpMock) CreateConsumer(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error) {
 	m.createConsumerInvoked = true
-	return m.createConsumerFn(exchange, key, kind, queue, durable)
+	return m.createConsumerFn(exchange, key, kind, queue, durable, declareArgs, bindArgs)
 }
 
 func (m *amqpMock) WithExchange(exchange, kind string, durable bool) error {
