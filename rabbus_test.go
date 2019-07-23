@@ -84,7 +84,7 @@ func testCreateNewSpecifyingAmqpProvider(t *testing.T) {
 		}
 		return nil
 	}
-	_, err := New(dsn, PrefetchCount(count), PrefetchSize(size), QosGlobal(global), AmqpProvider(provider))
+	_, err := New(dsn, PrefetchCount(count), PrefetchSize(size), QosGlobal(global), AMQPProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -97,7 +97,7 @@ func testCreateNewSpecifyingAmqpProvider(t *testing.T) {
 func testFailToCreateNewWhenWithQosReturnsError(t *testing.T) {
 	provider := new(amqpMock)
 	provider.withQosFn = func(count, size int, global bool) error { return errAmqp }
-	r, err := New(dsn, AmqpProvider(provider))
+	r, err := New(dsn, AMQPProvider(provider))
 	if r != nil {
 		t.Fatal("unexpected rabbus value")
 	}
@@ -110,7 +110,7 @@ func testFailToCreateNewWhenWithQosReturnsError(t *testing.T) {
 func testValidateRabbusListener(t *testing.T) {
 	provider := new(amqpMock)
 	provider.withQosFn = func(count, size int, global bool) error { return nil }
-	r, err := New(dsn, AmqpProvider(provider))
+	r, err := New(dsn, AMQPProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -175,7 +175,7 @@ func testCreateNewListener(t *testing.T) {
 		}
 		return make(<-chan amqp.Delivery), nil
 	}
-	r, err := New(dsn, AmqpProvider(provider), Durable(durable))
+	r, err := New(dsn, AMQPProvider(provider), Durable(durable))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -201,7 +201,7 @@ func testFailToCreateNewListenerWhenCreateConsumerReturnsError(t *testing.T) {
 	provider.createConsumerFn = func(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error) {
 		return nil, errAmqp
 	}
-	r, err := New(dsn, AmqpProvider(provider))
+	r, err := New(dsn, AMQPProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err.Error())
 	}
@@ -250,7 +250,7 @@ func testEmitAsyncMessage(t *testing.T) {
 		}
 		return nil
 	}
-	r, err := New(dsn, AmqpProvider(provider))
+	r, err := New(dsn, AMQPProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -297,7 +297,7 @@ func testEmitAsyncMessageFailToDeclareExchange(t *testing.T) {
 	provider.withQosFn = func(count, size int, global bool) error { return nil }
 	provider.withExchangeFn = func(exchange, kind string, durable bool) error { return errAmqp }
 	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return nil }
-	r, err := New(dsn, AmqpProvider(provider))
+	r, err := New(dsn, AMQPProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -343,7 +343,7 @@ func testEmitAsyncMessageFailToPublish(t *testing.T) {
 	provider.withQosFn = func(count, size int, global bool) error { return nil }
 	provider.withExchangeFn = func(exchange, kind string, durable bool) error { return nil }
 	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return errAmqp }
-	r, err := New(dsn, AmqpProvider(provider))
+	r, err := New(dsn, AMQPProvider(provider))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
@@ -390,7 +390,7 @@ func testEmitAsyncMessageEnsureBreaker(t *testing.T) {
 	provider.withQosFn = func(count, size int, global bool) error { return nil }
 	provider.withExchangeFn = func(exchange, kind string, durable bool) error { return nil }
 	provider.publishFn = func(exchange, key string, opts amqp.Publishing) error { return errAmqp }
-	r, err := New(dsn, AmqpProvider(provider), OnStateChange(fn), Threshold(threshold))
+	r, err := New(dsn, AMQPProvider(provider), OnStateChange(fn), Threshold(threshold))
 	if err != nil {
 		t.Fatalf("expected to create new rabbus, got %s", err)
 	}
