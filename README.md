@@ -112,10 +112,12 @@ func main() {
 	go r.Run(ctx)
 
 	messages, err := r.Listen(rabbus.ListenConfig{
-		Exchange: "events_ex",
-		Kind:     "topic",
-		Key:      "events_key",
-		Queue:    "events_q",
+		Exchange:    "events_ex",
+		Kind:        "topic",
+		Key:         "events_key",
+		Queue:       "events_q",
+		DeclareArgs: rabbus.NewDeclareArgs().WithMessageTTL(15 * time.Minute).With("foo", "bar"),
+		BindArgs:    rabbus.NewBindArgs().With("baz", "qux"),
 	})
 	if err != nil {
 		// handle errors during adding listener

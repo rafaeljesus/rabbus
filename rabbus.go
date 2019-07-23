@@ -7,6 +7,7 @@ import (
 	"time"
 
 	amqpWrap "github.com/rafaeljesus/rabbus/internal/amqp"
+
 	"github.com/rafaeljesus/retry-go"
 	"github.com/sony/gobreaker"
 	"github.com/streadway/amqp"
@@ -32,9 +33,6 @@ const (
 )
 
 type (
-	// Option represents an option you can pass to New.
-	// See the documentation for the individual options.
-	Option func(*Rabbus) error
 	// OnStateChangeFunc is the callback function when circuit breaker state changes.
 	OnStateChangeFunc func(name, from, to string)
 
@@ -71,6 +69,11 @@ type (
 		PassiveExchange bool
 		// Queue the queue name
 		Queue string
+		// DeclareArgs is a list of arguments accepted for when declaring the queue.
+		// See https://www.rabbitmq.com/queues.html#optional-arguments for more info.
+		DeclareArgs *DeclareArgs
+		// BindArgs is a list of arguments accepted for when binding the exchange to the queue
+		BindArgs *BindArgs
 	}
 
 	// Delivery wraps amqp.Delivery struct
@@ -80,7 +83,7 @@ type (
 
 	// Rabbus interpret (implement) Rabbus interface definition
 	Rabbus struct {
-		Amqp
+		AMQP
 		mu         sync.RWMutex
 		breaker    *gobreaker.CircuitBreaker
 		emit       chan Message
@@ -92,12 +95,12 @@ type (
 		conDeclared int // conDeclared is a counter for the declared consumers
 	}
 
-	// Amqp exposes a interface for interacting with AMQP broker
-	Amqp interface {
+	// AMQP exposes a interface for interacting with AMQP broker
+	AMQP interface {
 		// Publish wraps amqp.Publish method
 		Publish(exchange, key string, opts amqp.Publishing) error
 		// CreateConsumer creates a amqp consumer
-		CreateConsumer(exchange, key, kind, queue string, durable bool) (<-chan amqp.Delivery, error)
+		CreateConsumer(exchange, key, kind, queue string, durable bool, declareArgs, bindArgs amqp.Table) (<-chan amqp.Delivery, error)
 		// WithExchange creates a amqp exchange
 		WithExchange(exchange, kind string, durable bool) error
 		// WithQos wrapper over amqp.Qos method
@@ -178,12 +181,12 @@ func New(dsn string, options ...Option) (*Rabbus, error) {
 		}
 	}
 
-	if r.Amqp == nil {
+	if r.AMQP == nil {
 		amqpWrapper, err := amqpWrap.New(dsn, r.config.isExchangePassive)
 		if err != nil {
 			return nil, err
 		}
-		r.Amqp = amqpWrapper
+		r.AMQP = amqpWrapper
 	}
 
 	if err := r.WithQos(
@@ -220,7 +223,7 @@ func (r *Rabbus) Run(ctx context.Context) error {
 				return nil
 			}
 
-			r.handleAmqpClose(err)
+			r.handleAMQPClose(err)
 
 			// We have reconnected, so we need a new NotifyClose again.
 			notifyClose = r.NotifyClose(make(chan *amqp.Error))
@@ -248,7 +251,15 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, err
 	}
 
-	msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
+	if c.DeclareArgs == nil {
+		c.DeclareArgs = NewDeclareArgs()
+	}
+
+	if c.BindArgs == nil {
+		c.BindArgs = NewBindArgs()
+	}
+
+	msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs.args, c.BindArgs.args)
 	if err != nil {
 		return nil, err
 	}
@@ -260,14 +271,14 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 
 	messages := make(chan ConsumerMessage, 256)
 	go r.wrapMessage(c, msgs, messages)
-	go r.listenReconn(c, messages)
+	go r.listenReconnect(c, messages)
 
 	return messages, nil
 }
 
 // Close channels and attempt to close channel and connection.
 func (r *Rabbus) Close() error {
-	err := r.Amqp.Close()
+	err := r.AMQP.Close()
 	close(r.emit)
 	close(r.emitOk)
 	close(r.emitErr)
@@ -317,128 +328,13 @@ func (r *Rabbus) produce(m Message) {
 	r.emitOk <- struct{}{}
 }
 
-// Durable indicates of the queue will survive broker restarts. Default to true.
-func Durable(durable bool) Option {
-	return func(r *Rabbus) error {
-		r.config.durable = durable
-		return nil
-	}
-}
-
-// PassiveExchange forces passive connection with all exchanges using
-// amqp's ExchangeDeclarePassive instead the default ExchangeDeclare
-func PassiveExchange(isExchangePassive bool) Option {
-	return func(r *Rabbus) error {
-		r.config.isExchangePassive = isExchangePassive
-		return nil
-	}
-}
-
-// PrefetchCount limit the number of unacknowledged messages.
-func PrefetchCount(count int) Option {
-	return func(r *Rabbus) error {
-		r.config.qos.prefetchCount = count
-		return nil
-	}
-}
-
-// PrefetchSize when greater than zero, the server will try to keep at least
-// that many bytes of deliveries flushed to the network before receiving
-// acknowledgments from the consumers.
-func PrefetchSize(size int) Option {
-	return func(r *Rabbus) error {
-		r.config.qos.prefetchSize = size
-		return nil
-	}
-}
-
-// QosGlobal when global is true, these Qos settings apply to all existing and future
-// consumers on all channels on the same connection. When false, the Channel.Qos
-// settings will apply to all existing and future consumers on this channel.
-// RabbitMQ does not implement the global flag.
-func QosGlobal(global bool) Option {
-	return func(r *Rabbus) error {
-		r.config.qos.global = global
-		return nil
-	}
-}
-
-// Attempts is the max number of retries on broker outages.
-func Attempts(attempts int) Option {
-	return func(r *Rabbus) error {
-		r.config.retryCfg.attempts = attempts
-		return nil
-	}
-}
-
-// Sleep is the sleep time of the retry mechanism.
-func Sleep(sleep time.Duration) Option {
-	return func(r *Rabbus) error {
-		if sleep == 0 {
-			r.config.retryCfg.reconnectSleep = time.Second * 10
-		}
-		r.config.retryCfg.sleep = sleep
-		return nil
-	}
-}
-
-// BreakerInterval is the cyclic period of the closed state for CircuitBreaker to clear the internal counts,
-// If Interval is 0, CircuitBreaker doesn't clear the internal counts during the closed state.
-func BreakerInterval(interval time.Duration) Option {
-	return func(r *Rabbus) error {
-		r.config.breaker.interval = interval
-		return nil
-	}
-}
-
-// BreakerTimeout is the period of the open state, after which the state of CircuitBreaker becomes half-open.
-// If Timeout is 0, the timeout value of CircuitBreaker is set to 60 seconds.
-func BreakerTimeout(timeout time.Duration) Option {
-	return func(r *Rabbus) error {
-		r.config.breaker.timeout = timeout
-		return nil
-	}
-}
-
-// Threshold when a threshold of failures has been reached, future calls to the broker will not run.
-// During this state, the circuit breaker will periodically allow the calls to run and, if it is successful,
-// will start running the function again. Default value is 5.
-func Threshold(threshold uint32) Option {
-	return func(r *Rabbus) error {
-		if threshold == 0 {
-			threshold = 5
-		}
-		r.config.breaker.threshold = threshold
-		return nil
-	}
-}
-
-// OnStateChange is called whenever the state of CircuitBreaker changes.
-func OnStateChange(fn OnStateChangeFunc) Option {
-	return func(r *Rabbus) error {
-		r.config.breaker.onStateChange = fn
-		return nil
-	}
-}
-
-// AmqpProvider expose a interface for interacting with amqp broker
-func AmqpProvider(provider Amqp) Option {
-	return func(r *Rabbus) error {
-		if provider != nil {
-			r.Amqp = provider
-			return nil
-		}
-		return errors.New("unexpected amqp provider")
-	}
-}
-
 func (r *Rabbus) wrapMessage(c ListenConfig, sourceChan <-chan amqp.Delivery, targetChan chan ConsumerMessage) {
 	for m := range sourceChan {
 		targetChan <- newConsumerMessage(m)
 	}
 }
 
-func (r *Rabbus) handleAmqpClose(err error) {
+func (r *Rabbus) handleAMQPClose(err error) {
 	for {
 		time.Sleep(time.Second)
 		aw, err := amqpWrap.New(r.config.dsn, r.config.isExchangePassive)
@@ -447,7 +343,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 		}
 
 		r.mu.Lock()
-		r.Amqp = aw
+		r.AMQP = aw
 		r.mu.Unlock()
 
 		if err := r.WithQos(
@@ -455,7 +351,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 			r.config.qos.prefetchSize,
 			r.config.qos.global,
 		); err != nil {
-			r.Amqp.Close()
+			r.AMQP.Close()
 			continue
 		}
 
@@ -466,15 +362,15 @@ func (r *Rabbus) handleAmqpClose(err error) {
 	}
 }
 
-func (r *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
+func (r *Rabbus) listenReconnect(c ListenConfig, messages chan ConsumerMessage) {
 	for range r.reconn {
-		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable)
+		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs.args, c.BindArgs.args)
 		if err != nil {
 			continue
 		}
 
 		go r.wrapMessage(c, msgs, messages)
-		go r.listenReconn(c, messages)
+		go r.listenReconnect(c, messages)
 		break
 	}
 }
@@ -487,6 +383,7 @@ func newBreakerSettings(c config) gobreaker.Settings {
 	s.ReadyToTrip = func(counts gobreaker.Counts) bool {
 		return counts.ConsecutiveFailures > c.breaker.threshold
 	}
+
 	if c.breaker.onStateChange != nil {
 		s.OnStateChange = func(name string, from gobreaker.State, to gobreaker.State) {
 			c.breaker.onStateChange(name, from.String(), to.String())
