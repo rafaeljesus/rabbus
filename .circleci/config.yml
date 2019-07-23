@@ -1,0 +1,25 @@
+version: 2
+
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:latest
+      - image: "rabbitmq:3.7-management-alpine"
+
+    working_directory: "/go/src/github.com/rafaeljesus/rabbus"
+
+    environment:
+      AMQP_DSN: "amqp://guest:guest@localhost:5672/"
+      AMQP_MANAGEMENT_PORT: "http://localhost:15672/api"
+
+    steps:
+      - checkout
+      - run: make deps
+      - run: make test
+      - run: make integration-test-ci
+
+workflows:
+  version: 2
+  run-tests:
+    jobs:
+      - build
