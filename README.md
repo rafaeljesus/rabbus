@@ -116,7 +116,8 @@ func main() {
 		Kind:        "topic",
 		Key:         "events_key",
 		Queue:       "events_q",
-		DeclareArgs: rabbus.DeclareArgs().WithMessageTTL(15 * time.Minute).Table()
+		DeclareArgs: rabbus.NewDeclareArgs().WithMessageTTL(15 * time.Minute).With("foo", "bar"),
+		BindArgs:    rabbus.NewBindArgs().With("baz", "qux"),
 	})
 	if err != nil {
 		// handle errors during adding listener
