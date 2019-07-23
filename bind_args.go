@@ -9,7 +9,7 @@ type BindArgs struct {
 	args amqp.Table
 }
 
-// NewDeclareArgs creates new queue declaration values builder
+// NewBindArgs creates new queue bind values builder
 func NewBindArgs() *BindArgs {
 	return &BindArgs{args: make(amqp.Table)}
 }
