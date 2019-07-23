@@ -1,7 +1,7 @@
 version: 2
 
 jobs:
-  test:
+  build:
     docker:
       - image: circleci/golang:latest
       - image: "rabbitmq:3.7-management-alpine"
@@ -17,3 +17,9 @@ jobs:
       - run: make deps
       - run: make test
       - run: make integration-test-ci
+
+workflows:
+  version: 2
+  run-tests:
+    jobs:
+      - build
