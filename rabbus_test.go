@@ -3,7 +3,6 @@ package rabbus
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 
 var (
 	dsn     = "amqp://path"
-	mu      sync.RWMutex
 	timeout = time.After(3 * time.Second)
 	errAmqp = errors.New("amqp error")
 )

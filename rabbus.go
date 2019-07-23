@@ -254,6 +254,14 @@ func (r *Rabbus) Listen(c ListenConfig) (chan ConsumerMessage, error) {
 		return nil, err
 	}
 
+	if c.DeclareArgs == nil {
+		c.DeclareArgs = NewDeclareArgs()
+	}
+
+	if c.BindArgs == nil {
+		c.BindArgs = NewBindArgs()
+	}
+
 	msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs.args, c.BindArgs.args)
 	if err != nil {
 		return nil, err
@@ -474,7 +482,7 @@ func (r *Rabbus) handleAmqpClose(err error) {
 
 func (r *Rabbus) listenReconn(c ListenConfig, messages chan ConsumerMessage) {
 	for range r.reconn {
-		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs, c.BindArgs)
+		msgs, err := r.CreateConsumer(c.Exchange, c.Key, c.Kind, c.Queue, r.config.durable, c.DeclareArgs.args, c.BindArgs.args)
 		if err != nil {
 			continue
 		}
